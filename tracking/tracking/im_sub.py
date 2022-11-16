@@ -39,6 +39,9 @@ class ImageSubscriber(Node):
         # Count the number of cameras
         self.get_logger().info(f"Number of Cameras is: {count_cameras()}")
 
+        self.kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(3,3))
+        self.fgbg = cv2.createBackgroundSubtractorMOG2(detectShadows=False)
+
     # """
     # Callback function
     # TODO: 
@@ -56,7 +59,9 @@ class ImageSubscriber(Node):
         self.get_logger().info("Receiving video_frames", once=True)
         curr_frame = self.bridge.imgmsg_to_cv2(data) # Convert ROS image msg to OpenCV image
         im_rgb = cv2.cvtColor(curr_frame, cv2.COLOR_RGB2BGR)
-
+        fgmask = self.fgbg.apply(im_rgb)
+        fgmask = cv2.morphologyEx(fgmask, cv2.MORPH_OPEN, self.kernel)
+        cv2.imshow('frame', fgmask)
         self.vid_pub.publish(self.bridge.cv2_to_imgmsg(im_rgb)) # Publish msg 
         # self.get_logger().info(self.bridge.cv2_to_imgmsg(im_rgb), once=True)
 
