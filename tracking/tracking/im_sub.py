@@ -23,6 +23,9 @@ class ImageSubscriber(Node):
         # self.vid_sub = self.create_subscription(Image, 'video_frames', self.sub_callback, 10)
         self.vid_sub = self.create_subscription(Image, '/camera/color/image_raw', \
                                                 self.sub_callback, 10)
+        self.depth_sub = self.create_subscription(Image, '/camera/depth/image_rect_raw', \
+                                                self.depth_callback, 10)
+
         self.bridge = CvBridge()
 
         # Publisher that publishes to the video_frames topic
@@ -54,13 +57,22 @@ class ImageSubscriber(Node):
 
     def sub_callback(self, data):
         self.get_logger().info("Receving video_frames", once=True)
-        curr_frame = self.bridge.imgmsg_to_cv2(data) # Convert ROS image msg to OpenCV image
-        im_rgb = cv2.cvtColor(curr_frame, cv2.COLOR_RGB2BGR)
+        curr_frame = self.bridge.imgmsg_to_cv2(data, desired_encoding='bgr8') # Convert ROS image msg to OpenCV image
+        # im_rgb = cv2.cvtColor(curr_frame, cv2.COLOR_RGB2BGR)
 
-        self.vid_pub.publish(self.bridge.cv2_to_imgmsg(im_rgb)) # Publish msg 
+        self.vid_pub.publish(self.bridge.cv2_to_imgmsg(curr_frame)) # Publish msg 
         # self.get_logger().info(self.bridge.cv2_to_imgmsg(im_rgb), once=True)
 
-        cv2.imshow("camera", im_rgb) # Display Image
+        cv2.imshow("camera", curr_frame) # Display Image
+        cv2.waitKey(1)
+    
+    def depth_callback(self, data):
+        self.get_logger().info("Receiving Depth Frames", once=True)
+        curr_frame = self.bridge.imgmsg_to_cv2(data)
+        depth_img = cv2.applyColorMap(cv2.convertScaleAbs(curr_frame, alpha=0.3), cv2.COLORMAP_JET)
+        self.vid_pub.publish(self.bridge.cv2_to_imgmsg(depth_img))
+
+        cv2.imshow("Depth", depth_img) # Display Depth Image
         cv2.waitKey(1)
 
 def main(args=None):
