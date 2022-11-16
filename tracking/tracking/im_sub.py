@@ -12,13 +12,15 @@ class ImageSubscriber(Node):
 
         # Creating the Subscriber, which receives info from the video_frames topic
         # self.vid_sub = self.create_subscription(Image, 'video_frames', self.sub_callback, 10)
-        self.vid_sub = self.create_subscription(Image, '/camera/color/image_raw', self.sub_callback, 10)
+        self.vid_sub = self.create_subscription(Image, '/camera/color/image_raw', \
+                                                self.sub_callback, 10)
         self.bridge = CvBridge()
 
     def sub_callback(self, data):
         self.get_logger().info("Receiving video_frames", once=True)
         curr_frame = self.bridge.imgmsg_to_cv2(data) # Convert ROS image msg to OpenCV image
-        cv2.imshow("camera", curr_frame) # Display Image
+        im_rgb = cv2.cvtColor(curr_frame, cv2.COLOR_RGB2BGR)
+        cv2.imshow("camera", im_rgb) # Display Image
         cv2.waitKey(1)
 
 def main(args=None):
