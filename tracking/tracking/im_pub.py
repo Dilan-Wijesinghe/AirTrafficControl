@@ -16,7 +16,6 @@ def count_cameras():
             continue
         return i
 
-
 """
 TODO:
 """
