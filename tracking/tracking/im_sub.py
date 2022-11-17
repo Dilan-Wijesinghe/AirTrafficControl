@@ -3,13 +3,14 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
-import cv2
+import cv2 as cv
+import numpy as np
 
 # Get the number of cameras available
 def count_cameras():
     max_tested = 100
     for i in range(max_tested):
-        temp_camera = cv2.VideoCapture(i)
+        temp_camera = cv.VideoCapture(i)
         if temp_camera.isOpened():
             temp_camera.release()
             continue
@@ -24,7 +25,7 @@ class ImageSubscriber(Node):
         self.vid_sub = self.create_subscription(Image, '/camera/color/image_raw', \
                                                 self.sub_callback, 10)
         self.depth_sub = self.create_subscription(Image, '/camera/depth/image_rect_raw', \
-                                                self.depth_callback, 10)
+                                             self.depth_callback, 10)
         self.bridge = CvBridge()
 
         # Publisher that publishes to the video_frames topic
@@ -41,8 +42,8 @@ class ImageSubscriber(Node):
         # Count the number of cameras
         self.get_logger().info(f"Number of Cameras is: {count_cameras()}")
 
-        self.kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(3,3))
-        self.bgsub = cv2.createBackgroundSubtractorMOG2(detectShadows=False)
+        self.kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE,(3,3))
+        self.bgsub = cv.createBackgroundSubtractorMOG2(detectShadows=False)
 
     # """
     # Callback function
@@ -59,27 +60,44 @@ class ImageSubscriber(Node):
 
     def sub_callback(self, data):
         self.get_logger().info("Receiving video_frames", once=True)
-        curr_frame = self.bridge.imgmsg_to_cv2(data, desired_encoding='bgr8') # Convert ROS image msg to OpenCV image
+        curr_frame = self.bridge.imgmsg_to_cv2(data, desired_encoding='mono8') # Convert ROS image msg to OpenCV image
+        # frame_HSV = cv.cvtColor(curr_frame, cv.COLOR_BGR2HSV)
+        # frame_thresh = cv.inRange(frame_HSV (low_h, low_s, low_v), (high_h, high_s, high_v)
+
+        # Background Subtraction
         # im_rgb = cv2.cvtColor(curr_frame, cv2.COLOR_RGB2BGR)
         fgmask = self.bgsub.apply(curr_frame)
-        fgmask = cv2.morphologyEx(fgmask, cv2.MORPH_OPEN, self.kernel)
-        cv2.imshow('FG Mask', fgmask)
+        fgmask = cv.morphologyEx(fgmask, cv.MORPH_OPEN, self.kernel)
 
+        circles = cv.HoughCircles(curr_frame, cv.HOUGH_GRADIENT,4,200,
+                                  param1=80, param2=200, minRadius=100,maxRadius=200)
+        
+        if circles is None:
+            print("No circles!")
+            pass
+        else:
+            print(circles)
+            circles = np.uint16(np.around(circles))
+
+            for i in circles[0,:]:
+                cv.circle(curr_frame, (i[0], i[1]), i[2], (0,255,0), 2)
+                cv.circle(curr_frame, (i[0], i[1]), 2, (0, 0, 255), 3)
+        
         self.vid_pub.publish(self.bridge.cv2_to_imgmsg(curr_frame)) # Publish msg 
-        # self.get_logger().info(self.bridge.cv2_to_imgmsg(im_rgb), once=True)
+        # self.get_logger().info(self.bridge.cv_to_imgmsg(im_rgb), once=True)
 
-        cv2.imshow("Camera", curr_frame) # Display image
-        cv2.imshow("FG Mask", fgmask) # Display foreground mask
-        cv2.waitKey(1)
+        cv.imshow("Camera", curr_frame) # Display image
+        # cv.imshow("FG Mask", fgmask) # Display foreground mask
+        cv.waitKey(1)
     
     def depth_callback(self, data):
         self.get_logger().info("Receiving depth frames", once=True)
         curr_frame = self.bridge.imgmsg_to_cv2(data)
-        depth_img = cv2.applyColorMap(cv2.convertScaleAbs(curr_frame, alpha=0.3), cv2.COLORMAP_JET)
+        depth_img = cv.applyColorMap(cv.convertScaleAbs(curr_frame, alpha=0.3), cv.COLORMAP_JET)
         self.vid_pub.publish(self.bridge.cv2_to_imgmsg(depth_img))
 
-        cv2.imshow("Depth", depth_img) # Display depth image
-        cv2.waitKey(1)
+        # cv.imshow("Depth", depth_img) # Display depth image
+        cv.waitKey(1)
 
 def main(args=None):
     rclpy.init(args=args)
