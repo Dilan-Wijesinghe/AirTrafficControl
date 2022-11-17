@@ -20,8 +20,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'img_pub = tracking.im_pub:main',
-            'img_sub = tracking.im_sub:main'
+            'im_pub = tracking.im_pub:main',
+            'im_sub = tracking.im_sub:main'
         ],
     },
 )

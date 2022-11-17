@@ -69,8 +69,9 @@ class ImageSubscriber(Node):
         fgmask = self.bgsub.apply(curr_frame)
         fgmask = cv.morphologyEx(fgmask, cv.MORPH_OPEN, self.kernel)
 
-        circles = cv.HoughCircles(curr_frame, cv.HOUGH_GRADIENT,4,200,
-                                  param1=80, param2=200, minRadius=100,maxRadius=200)
+        # Hough Circle Transform
+        circles = cv.HoughCircles(curr_frame, cv.HOUGH_GRADIENT, 4, 200,
+                                  param1=100, param2=200, minRadius=80,maxRadius=200)
         
         if circles is None:
             print("No circles!")
