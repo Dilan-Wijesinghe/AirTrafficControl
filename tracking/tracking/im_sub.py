@@ -25,7 +25,6 @@ class ImageSubscriber(Node):
                                                 self.sub_callback, 10)
         self.depth_sub = self.create_subscription(Image, '/camera/depth/image_rect_raw', \
                                                 self.depth_callback, 10)
-
         self.bridge = CvBridge()
 
         # Publisher that publishes to the video_frames topic
