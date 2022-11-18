@@ -1,0 +1,4 @@
+# Desired pose (position and orientation)
+geometry_msgs/Pose[] poses
+---
+std_msgs/Empty empty
