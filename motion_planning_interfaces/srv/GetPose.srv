@@ -1,0 +1,3 @@
+# Desired pose (position and orientation)
+geometry_msgs/Pose pose
+---
