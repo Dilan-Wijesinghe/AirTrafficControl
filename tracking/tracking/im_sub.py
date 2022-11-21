@@ -103,7 +103,10 @@ class ImageSubscriber(Node):
         self.get_logger().info(f"Number of Cameras is: {count_cameras()}")
 
         self.kernel = cv.getStructuringElement(cv.MORPH_ELLIPSE,(3,3))
-        self.bgsub = cv.createBackgroundSubtractorMOG2(detectShadows=False)
+        # History -> How long to keep the frames (num iterations of loop)
+        # varThreshold -> How sensitive to look at the foreground objects. 
+        #              -> Low varThreshold is more sensitive, high is less
+        self.bgsub = cv.createBackgroundSubtractorMOG2(history = 1000, varThreshold = 1000, detectShadows=False)
 
     # """
     # Callback function
@@ -123,19 +126,12 @@ class ImageSubscriber(Node):
         # curr_frame = self.bridge.imgmsg_to_cv2(data, desired_encoding='mono8') # Convert ROS image msg to OpenCV image
         curr_frame = self.bridge.imgmsg_to_cv2(data, desired_encoding='bgr8') # Convert ROS image msg to OpenCV image
         # gray = cv.cvtColor(curr_frame, cv.COLOR_BGR2GRAY)
-        frame_HSV = cv.cvtColor(curr_frame, cv.COLOR_BGR2HSV)
-        frame_thresh = cv.inRange(frame_HSV, (low_h, low_s, low_v), (high_h, high_s, high_v))
-        cv.imshow(wind_name, frame_thresh)
+        # frame_HSV = cv.cvtColor(curr_frame, cv.COLOR_BGR2HSV)
+        # frame_thresh = cv.inRange(frame_HSV, (low_h, low_s, low_v), (high_h, high_s, high_v))
+        # cv.imshow(wind_name, frame_thresh)
 
         # Contours
-        contours, hier = cv.findContours(frame_thresh, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
-
-        # Find Canny Edges
-        # edged = cv.Canny(curr_frame)
-        # contours, hier = cv.findContours(edged, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
-        # cv.imshow('Canny Edges', edged)
-
-        # cv.drawContours(curr_frame, )
+        # contours, hier = cv.findContours(frame_thresh, cv.RETR_TREE, cv.CHAIN_APPROX_SIMPLE)
 
         # --- Centroids and Areas ---
         # centroids = []
@@ -172,11 +168,54 @@ class ImageSubscriber(Node):
 
         # Background Subtraction
         # im_rgb = cv2.cvtColor(curr_frame, cv2.COLOR_RGB2BGR)
-        # fgmask = self.bgsub.apply(curr_frame)
-        # fgmask = cv.morphologyETransform
-        # param1 - sensitivityx(fgmask, cv.MORPH_OPEN, self.kernel)
+
+        # Apply the Background Subtraction
+        fgmask = self.bgsub.apply(curr_frame)
+        _, fgmask = cv.threshold(fgmask, 250, 255, cv.THRESH_BINARY)
+        fgmask = cv.morphologyEx(fgmask, cv.MORPH_OPEN, self.kernel) # Morph ops?
+        fgmask = cv.erode(fgmask, kernel=self.kernel, iterations = 1)
+        fgmask = cv.dilate(fgmask, kernel=self.kernel, iterations = 2)
+
+        # Need some noise reduction here
+
+        # Detect Contours
+        contours, _ = cv.findContours(fgmask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+
+        # Loop over the contours
+        try:
+            print("Found Contours")
+            areas = [cv.contourArea(cont) for cont in contours]
+            MaxCont = contours[np.argmax(areas)] 
+            # for cont in contours:
+                # if cv.contourArea(cont) > 1000:
+            x, y, w, h = cv.boundingRect(MaxCont)
+            cv.rectangle(curr_frame, (x,y), (x + w, y + h), (0, 0, 255), 2) # Draw rect over obj
+            cv.putText(curr_frame, "Found Object", (x,y-10), cv.FONT_HERSHEY_SIMPLEX, 0.3, (0,255,0),1, cv.LINE_AA)
+        except:
+            print("No Contours")
+
+        # Get Real Moving Object
+        real = cv.bitwise_and(curr_frame, curr_frame, mask=fgmask)
+
+        # fgmask 3 channeled
+        fgmask_3 = cv.cvtColor(fgmask, cv.COLOR_GRAY2BGR)
+
+        # Stack all three frames 
+        stacked = np.vstack((fgmask_3, curr_frame, real))
+        cv.imshow("Stacked", cv.resize(stacked, None, fx=0.40, fy=0.40))
+       
+        # cv.imshow('Background Sub', fgmask)
+
+        # Find Canny Edges
+        # edged = cv.Canny(fgmask, 30, 200)
+        # # edged = cv.Canny(curr_frame, 30, 200)
+        # contours, hier = cv.findContours(edged, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
+        # cv.imshow('Canny Edges', edged)
+
+        # cv.drawContours(curr_frame, contours, -1, (0, 255, 0), 3)
 
         # Hough Circle 
+        # param1 - sensitivity
         # param2 - number of edgepoints
         # circles = cv.HoughCircles(curr_frame, cv.HOUGH_GRADIENT, 1, 1000,
         #                           param1=150, param2=60, minRadius=0, maxRadius=150)
@@ -195,7 +234,8 @@ class ImageSubscriber(Node):
         self.vid_pub.publish(self.bridge.cv2_to_imgmsg(curr_frame)) # Publish msg 
         # self.get_logger().info(self.bridge.cv_to_imgmsg(im_rgb), once=True)
 
-        cv.imshow("Camera + Contours", frame_HSV) # Display image
+        # cv.imshow('Contours', curr_frame)
+        # cv.imshow("Camera + Contours", frame_HSV) # Display image
         # cv.imshow("FG Mask", fgmask) # Display foreground mask
         cv.waitKey(1)
     
