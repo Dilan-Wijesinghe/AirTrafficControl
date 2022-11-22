@@ -5,15 +5,15 @@ from sklearn.linear_model import LinearRegression
 
 # Point cloud get from cv
 
-# data = np.array([[ 1 ,  1 ,  1 ],[ 2. ,  2.  , 3],[ 3. ,  3.  , 4], [ 4,   4 , 5],
-#                  [ 5,  5, 6], [ 6,  6 , 7], [7, 7, 8],[ 8,   8, 9],
-#                  [ 9,  9, 10], [ 10,  10, 11]])
-# x = data[:,0]
-# y = data[:,1]
-# z = data[:,2]
-z = np.linspace(0, 15, 10)
-x = np.sin(z)
-y = np.cos(z)
+data = np.array([[ 1 ,  1 ,  10 ],[ 2. ,  2.  , 9.8],[ 3 ,  3 ,  9.5 ],[ 4 ,  4 ,  9 ],
+                 [ 5 ,  5 ,  8 ], [ 6 ,  6 ,  6], [ 7 ,  7 ,  2], [ 8 ,  8 ,  4], 
+                 [ 9 ,  9 ,  8], [ 10 ,  11 ,  12], [ 12 ,  14 ,  16]])
+x = data[:,0]
+y = data[:,1]
+z = data[:,2]
+# z = np.linspace(0, 15, 10)
+# x = np.sin(z)
+# y = np.cos(z)
 
 # x = np.array(x)
 # y = np.array(y)
