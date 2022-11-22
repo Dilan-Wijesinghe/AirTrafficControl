@@ -32,13 +32,14 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from moveit_msgs.action import MoveGroup, ExecuteTrajectory
 from moveit_msgs.msg import Constraints, JointConstraint, MotionPlanRequest, \
     WorkspaceParameters, RobotState, RobotTrajectory, PlanningOptions, PositionIKRequest, \
-    PlanningScene, PlanningSceneWorld, CollisionObject, PlanningSceneComponents
+    PlanningScene, PlanningSceneWorld, CollisionObject, PlanningSceneComponents, \
+    OrientationConstraint
 from sensor_msgs.msg import JointState
 from moveit_msgs.srv import GetPositionIK, GetPlanningScene
 from trajectory_msgs.msg import JointTrajectory
 from shape_msgs.msg import SolidPrimitive
 from std_msgs.msg import Header
-from geometry_msgs.msg import Vector3, PoseStamped, Pose, Point
+from geometry_msgs.msg import Vector3, PoseStamped, Pose, Point, Quaternion
 from tf2_ros.transform_listener import TransformListener
 from tf2_ros.buffer import Buffer
 from std_srvs.srv import SetBool as Bool
@@ -126,6 +127,14 @@ class Mover(Node):
         self.ik_robot_states = PoseStamped()
         self.ik_pose = Pose()
         self.ik_soln = RobotState()
+
+        # robot parameters
+        self.max_vel_scale = 0.3
+        self.velocity = 2 # m/s
+        self.traj_time = 0.0
+        self.joint_tolerance = self.max_vel_scale/10 * 0.0001 # 0.0001 is the default tolerance
+        # defining orientation constraint so that the ee is "facing upwards"
+        self.orient_constraint = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
 
     def set_start_callback(self, request, response):
         """
@@ -245,7 +254,6 @@ class Mover(Node):
         Returns: None
         """
 
-        print(self.balloon_position)
         # The following IF is IK for (user) START CONFIG.
         if self.set_start_state == State.GO:
             # filling in IK request msg
@@ -327,10 +335,52 @@ class Mover(Node):
             except TransformException as ex:
                 self.get_logger().info(f'Could not transform : {ex}')
 
+
+        if self.balloon_position != Point() and self.robot_state == State.NOTSET:
+            self.ik_pose.position = self.balloon_position
+            self.ik_pose.position.z = self.curr_pos[2]
+            self.robot_state = State.GO
+
         # The following is IK for FINAL joint state.
         if self.robot_state == State.GO:
             # filling in IK request msg
             self.ik_states.group_name = "panda_arm"
+
+            self.ik_states.robot_state = RobotState()
+            js = JointState()
+            js_header = Header()
+            js_header.stamp = self.get_clock().now().to_msg()
+            js_header.frame_id = 'panda_link0'
+            js.header = js_header
+            js.name = [
+                'panda_joint1',
+                'panda_joint2',
+                'panda_joint3',
+                'panda_joint4',
+                'panda_joint5',
+                'panda_joint6',
+                'panda_joint7',
+                'panda_finger_joint1',
+                'panda_finger_joint2'
+            ]
+            js.position = self.curr_joint_pos
+            self.ik_states.robot_state.joint_state = js
+            
+            cons = Constraints()
+            cons.name = 'stay_level'
+            orient_cons = OrientationConstraint()
+            orient_cons.header.stamp = self.get_clock().now().to_msg()
+            orient_cons.header.frame_id = 'panda_hand'
+            orient_cons.orientation = self.orient_constraint
+            orient_cons.link_name = 'panda_hand'
+            orient_cons.absolute_x_axis_tolerance = self.joint_tolerance
+            orient_cons.absolute_y_axis_tolerance = self.joint_tolerance
+            orient_cons.absolute_z_axis_tolerance = self.joint_tolerance
+            orient_cons.weight = 1.0
+            cons.orientation_constraints.append(orient_cons)
+            self.ik_states.constraints = cons
+
+            self.ik_states.avoid_collisions = True
 
             # PoseStamped msg
             self.ik_robot_states.pose = self.ik_pose
@@ -421,56 +471,56 @@ class Mover(Node):
         joint1 = JointConstraint()
         joint1.joint_name = "panda_joint1"
         joint1.position = self.final_js[0]
-        joint1.tolerance_above = 0.0001
-        joint1.tolerance_below = 0.0001
+        joint1.tolerance_above = self.joint_tolerance
+        joint1.tolerance_below = self.joint_tolerance
         joint1.weight = 1.0
         jc_list.append(joint1)
 
         joint2 = JointConstraint()
         joint2.joint_name = "panda_joint2"
         joint2.position = self.final_js[1]
-        joint2.tolerance_above = 0.0001
-        joint2.tolerance_below = 0.0001
+        joint2.tolerance_above = self.joint_tolerance
+        joint2.tolerance_below = self.joint_tolerance
         joint2.weight = 1.0
         jc_list.append(joint2)
 
         joint3 = JointConstraint()
         joint3.joint_name = "panda_joint3"
         joint3.position = self.final_js[2]
-        joint3.tolerance_above = 0.0001
-        joint3.tolerance_below = 0.0001
+        joint3.tolerance_above = self.joint_tolerance
+        joint3.tolerance_below = self.joint_tolerance
         joint3.weight = 1.0
         jc_list.append(joint3)
 
         joint4 = JointConstraint()
         joint4.joint_name = "panda_joint4"
         joint4.position = self.final_js[3]
-        joint4.tolerance_above = 0.0001
-        joint4.tolerance_below = 0.0001
+        joint4.tolerance_above = self.joint_tolerance
+        joint4.tolerance_below = self.joint_tolerance
         joint4.weight = 1.0
         jc_list.append(joint4)
 
         joint5 = JointConstraint()
         joint5.joint_name = "panda_joint5"
         joint5.position = self.final_js[4]
-        joint5.tolerance_above = 0.0001
-        joint5.tolerance_below = 0.0001
+        joint5.tolerance_above = self.joint_tolerance
+        joint5.tolerance_below = self.joint_tolerance
         joint5.weight = 1.0
         jc_list.append(joint5)
 
         joint6 = JointConstraint()
         joint6.joint_name = "panda_joint6"
         joint6.position = self.final_js[5]
-        joint6.tolerance_above = 0.0001
-        joint6.tolerance_below = 0.0001
+        joint6.tolerance_above = self.joint_tolerance
+        joint6.tolerance_below = self.joint_tolerance
         joint6.weight = 1.0
         jc_list.append(joint6)
 
         joint7 = JointConstraint()
         joint7.joint_name = "panda_joint7"
         joint7.position = self.final_js[6]
-        joint7.tolerance_above = 0.0001
-        joint7.tolerance_below = 0.0001
+        joint7.tolerance_above = self.joint_tolerance
+        joint7.tolerance_below = self.joint_tolerance
         joint7.weight = 1.0
         jc_list.append(joint7)
 
@@ -481,7 +531,7 @@ class Mover(Node):
         goal_msg.group_name = 'panda_manipulator'
         goal_msg.num_planning_attempts = 10
         goal_msg.allowed_planning_time = 5.0
-        goal_msg.max_velocity_scaling_factor = 0.1
+        goal_msg.max_velocity_scaling_factor = self.max_vel_scale
         goal_msg.max_acceleration_scaling_factor = 0.1
         move_group_goal.request = goal_msg
 
@@ -556,6 +606,10 @@ class Mover(Node):
 
         # get joint trajectory from planned trajectory
         joint_pt_list = self.planned_trajectory.joint_trajectory.points
+        traj_duration = (self.planned_trajectory.joint_trajectory.points[-1].time_from_start)
+        print(traj_duration)
+        self.traj_time = traj_duration.sec + traj_duration.nanosec * 10**(-9)
+        print(self.traj_time)
 
         # get joint names
         joint_names = self.planned_trajectory.joint_trajectory.joint_names
