@@ -36,7 +36,8 @@ setup(
                             # 'multiple_points_node = motion_planning.plan_multiple_points:main',
                             'simple_move = motion_planning.simple_move:main',
                             'arena_node = motion_planning.balloon_drop:main',
-                            'balloon_move = motion_planning.balloon_move:main'
+                            'balloon_move = motion_planning.balloon_move:main',
+                            'hit = motion_planning.hit:main'
                             ],
 
     },
