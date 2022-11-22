@@ -136,6 +136,9 @@ class Mover(Node):
         # defining orientation constraint so that the ee is "facing upwards"
         self.orient_constraint = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
 
+        # balloon parameters
+        self.first = True # used for initial starting position of balloon
+
     def set_start_callback(self, request, response):
         """
         Get the start position and change state.
@@ -254,6 +257,7 @@ class Mover(Node):
         Returns: None
         """
 
+        print(self.curr_pos)
         # The following IF is IK for (user) START CONFIG.
         if self.set_start_state == State.GO:
             # filling in IK request msg
@@ -336,7 +340,7 @@ class Mover(Node):
                 self.get_logger().info(f'Could not transform : {ex}')
 
 
-        if self.balloon_position != Point() and self.robot_state == State.NOTSET:
+        if self.balloon_position != Point():
             self.ik_pose.position = self.balloon_position
             self.ik_pose.position.z = self.curr_pos[2]
             self.robot_state = State.GO
@@ -607,7 +611,6 @@ class Mover(Node):
         # get joint trajectory from planned trajectory
         joint_pt_list = self.planned_trajectory.joint_trajectory.points
         traj_duration = (self.planned_trajectory.joint_trajectory.points[-1].time_from_start)
-        print(traj_duration)
         self.traj_time = traj_duration.sec + traj_duration.nanosec * 10**(-9)
         print(self.traj_time)
 
@@ -635,6 +638,7 @@ class Mover(Node):
         Returns: None
         """
         self.get_logger().info("Trajectory execution done")
+        self.first = False
         self.robot_state = State.NOTSET     # sub to joint_states, get the curr pos, and update it
 
     def wait_callback(self, request, response):
