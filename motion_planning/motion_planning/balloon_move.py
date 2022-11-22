@@ -245,6 +245,7 @@ class Mover(Node):
         Returns: None
         """
 
+        print(self.balloon_position)
         # The following IF is IK for (user) START CONFIG.
         if self.set_start_state == State.GO:
             # filling in IK request msg
