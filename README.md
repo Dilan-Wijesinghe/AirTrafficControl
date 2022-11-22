@@ -22,3 +22,13 @@ The `motion_planning_interfaces` package defines service files that can be used 
 5. To add a box object to the planning scene, run `ros2 service call /set_box_position motion_planning_interfaces/srv/GetPose "pose: {position: {x: ${x_pos}, y: ${y_pos}, z: ${z_pos}}, orientation: {x: ${x_value}, y: ${y_value}, z: ${z_value}, w: ${w_value}}}"` to set the position of the box, and the box will be added accordingly.
 
 6. To wait to execute after planning, run `ros2 service call /wait_before_execute std_srvs/srv/SetBool "data: true"` (note that true would cause it to plan and execute, false would have it just plan). Finally, call the same service call from part 3, i.e. `ros2 service call /set_pos motion_planning_interfaces/srv/GetPose "pose: {position: {x: ${x_pos}, y: ${y_pos}, z: ${z_pos}}}"`.
+
+
+## Adding a "balloon" into rviz
+1. Make sure that the franka robot is already running (see Quickstart #1) 
+
+2. Use the command `ros2 run motion_planning arena_node`. Note that the balloon's position is hardcoded (for the moment).
+
+3. Run `ros2 service call /balloon_drop std_srvs/srv/Empty` to drop the balloon.
+
+4. You need to kill the arena_node and rerun it to test again.
