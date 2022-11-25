@@ -106,7 +106,7 @@ class ImageSubscriber(Node):
         # History -> How long to keep the frames (num iterations of loop)
         # varThreshold -> How sensitive to look at the foreground objects. 
         #              -> Low varThreshold is more sensitive, high is less
-        self.bgsub = cv.createBackgroundSubtractorMOG2(history = 1000, varThreshold = 1000, detectShadows=False)
+        self.bgsub = cv.createBackgroundSubtractorMOG2(history = 500, varThreshold = 16, detectShadows=False)
 
     # """
     # Callback function
@@ -125,6 +125,8 @@ class ImageSubscriber(Node):
         self.get_logger().info("Receiving video_frames", once=True)
         # curr_frame = self.bridge.imgmsg_to_cv2(data, desired_encoding='mono8') # Convert ROS image msg to OpenCV image
         curr_frame = self.bridge.imgmsg_to_cv2(data, desired_encoding='bgr8') # Convert ROS image msg to OpenCV image
+   
+
         # gray = cv.cvtColor(curr_frame, cv.COLOR_BGR2GRAY)
         # frame_HSV = cv.cvtColor(curr_frame, cv.COLOR_BGR2HSV)
         # frame_thresh = cv.inRange(frame_HSV, (low_h, low_s, low_v), (high_h, high_s, high_v))
@@ -173,10 +175,15 @@ class ImageSubscriber(Node):
         fgmask = self.bgsub.apply(curr_frame)
         _, fgmask = cv.threshold(fgmask, 250, 255, cv.THRESH_BINARY)
         fgmask = cv.morphologyEx(fgmask, cv.MORPH_OPEN, self.kernel) # Morph ops?
-        fgmask = cv.erode(fgmask, kernel=self.kernel, iterations = 1)
-        fgmask = cv.dilate(fgmask, kernel=self.kernel, iterations = 2)
+        # fgmask = cv.erode(fgmask, kernel=self.kernel, iterations = 1)
+        # fgmask = cv.dilate(fgmask, kernel=self.kernel, iterations = 2)
 
-        # Need some noise reduction here
+        # # Need some noise reduction here
+        # noiseless_mask = cv.fastNlMeansDenoising(fgmask, None, 20, 7, 21) 
+        # fgmask = noiseless_mask
+        # noiseless_curr_frame = cv.fastNlMeansDenoisingColored(curr_frame ,None,20,20,7,21) 
+        # stacked = np.vstack((curr_frame, noiseless_curr_frame))
+        # cv.imshow("Stacked", cv.resize(stacked, None, fx=0.40, fy=0.40))
 
         # Detect Contours
         contours, _ = cv.findContours(fgmask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
@@ -193,6 +200,8 @@ class ImageSubscriber(Node):
             cv.putText(curr_frame, "Found Object", (x,y-10), cv.FONT_HERSHEY_SIMPLEX, 0.3, (0,255,0),1, cv.LINE_AA)
         except:
             print("No Contours")
+
+        # Draw Centroids on the Balloons
 
         # Get Real Moving Object
         real = cv.bitwise_and(curr_frame, curr_frame, mask=fgmask)
