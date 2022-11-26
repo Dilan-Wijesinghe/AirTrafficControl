@@ -71,65 +71,6 @@ import pyrealsense2 as rs
 # cv.createTrackbar('High V', wind_name , high_v, max_value, high_v_trackbar)
 # [trackbar]
 
-max_value = 360//2
-low_h = 100
-high_h = 360//2
-low_s = 0
-high_s = 255
-low_v = 0
-high_v = 255
-wind_name = 'Balloon Color Tracking'
-
-def low_h_trackbar(val):
-    global low_h
-    global high_h
-    low_h = val
-    low_h = min(high_h - 1, low_h)
-    cv.setTrackbarPos('Low H', wind_name, low_h)
-
-def high_h_trackbar(val):
-    global low_h
-    global high_h
-    high_h = val
-    high_h = max(high_h, low_h + 1)
-    cv.setTrackbarPos('High H', wind_name, high_h)
-
-def low_s_trackbar(val):
-    global low_s
-    global high_s
-    low_s = val
-    low_s = min(high_s-1, low_s)
-    cv.setTrackbarPos('Low S', wind_name, low_s)
-
-def high_s_trackbar(val):
-    global low_s
-    global high_s
-    high_s = val
-    high_s = max(high_s, low_s+1)
-    cv.setTrackbarPos('High S', wind_name, high_s)
-
-def low_v_trackbar(val):
-    global low_v
-    global high_v
-    low_v = val
-    low_v = min(high_v-1, low_v)
-    cv.setTrackbarPos('Low V', wind_name, low_v)
-
-def high_v_trackbar(val):
-    global low_v
-    global high_v
-    high_v = val
-    high_v = max(high_v, low_v+1)
-    cv.setTrackbarPos('High V', wind_name, high_v)
-
-cv.namedWindow(wind_name )
-cv.createTrackbar('Low H', wind_name , low_h, 360//2, low_h_trackbar)
-cv.createTrackbar('High H', wind_name , high_h, 360//2, high_h_trackbar)
-cv.createTrackbar('Low S', wind_name , low_s, 360//2, low_s_trackbar)
-cv.createTrackbar('High S', wind_name , high_s, max_value, high_s_trackbar)
-cv.createTrackbar('Low V', wind_name , low_v, max_value, low_v_trackbar)
-cv.createTrackbar('High V', wind_name , high_v, max_value, high_v_trackbar)
-## [trackbar]
 
 # Get the number of cameras available
 def count_cameras():
@@ -164,7 +105,6 @@ class ImageSubscriber(Node):
         self.intr_sub = self.create_subscription(CameraInfo, 'camera/aligned_depth_to_color/camera_info', \
                                                  self.intr_callback, 10)
         self.coords_pub = self.create_publisher(Point, 'balloon_coords', 10)
-        self.bridge = CvBridge()
 
         # Publisher that publishes to the video_frames topic
         self.vid_pub = self.create_publisher(Image, 'video_frames', 10)
@@ -185,9 +125,12 @@ class ImageSubscriber(Node):
         self.bgsub = cv.createBackgroundSubtractorMOG2(history = 500, varThreshold = 16, \
                                                        detectShadows = False)
         
+        # Frame Instantiation
         self.intr = None
         self.color_frame = None
         self.depth_frame = None
+        self.fgmask = None
+        self.bg_removed = None
 
     """ 
     TODO
@@ -214,21 +157,17 @@ class ImageSubscriber(Node):
             self.color_frame = curr_frame
             self.vid_pub.publish(self.bridge.cv2_to_imgmsg(self.color_frame)) # Publish msg 
 
+            self.remove_bg() # Remove background
+            self.bg_sub(self.bg_removed) # Apply Background subtraction
+
             # --- Color Variations ---
             # gray = cv.cvtColor(curr_frame, cv.COLOR_BGR2GRAY)
             # frame_HSV = cv.cvtColor(curr_frame, cv.COLOR_BGR2HSV)
             # frame_thresh = cv.inRange(frame_HSV, (low_h, low_s, low_v), (high_h, high_s, high_v))
             # cv.imshow(wind_name, frame_thresh)
 
-            # Apply the Background Subtraction
-            fgmask = self.bgsub.apply(self.color_frame)
-            _, fgmask = cv.threshold(fgmask, 250, 255, cv.THRESH_BINARY)
-            fgmask = cv.morphologyEx(fgmask, cv.MORPH_OPEN, self.kernel) 
-            # fgmask = cv.erode(fgmask, kernel=self.kernel, iterations = 1)
-            # fgmask = cv.dilate(fgmask, kernel=self.kernel, iterations = 2)
-
             # Detect Contours
-            contours, _ = cv.findContours(fgmask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+            contours, _ = cv.findContours(self.fgmask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
             self.coords = Point()
 
             # Loop over the contours
@@ -256,7 +195,7 @@ class ImageSubscriber(Node):
 
             try:
                 self.MaxCentroid = centroids[np.argmax(areas)]
-                print(self.MaxCentroid)
+                # print(self.MaxCentroid)
                 # --- Drawing Onto the Frames ---
                 ((x,y), r) = cv.minEnclosingCircle(MaxCont)
                 # x, y, w, h = cv.boundingRect(MaxCont) # Draw a Bounding Shape around the Max Contour
@@ -268,10 +207,11 @@ class ImageSubscriber(Node):
                 pass
 
             # Get Real Moving Object
-            real = cv.bitwise_and(self.color_frame, self.color_frame, mask=fgmask)
+            real = cv.bitwise_and(self.color_frame, self.color_frame, mask=self.fgmask)
+            #real = cv.bitwise_and(self.bg_removed, self.bg_removed, mask=self.fgmask)
 
             # fgmask 3 channeled
-            fgmask_3 = cv.cvtColor(fgmask, cv.COLOR_GRAY2BGR)
+            fgmask_3 = cv.cvtColor(self.fgmask, cv.COLOR_GRAY2BGR)
 
             # Stack all three frames 
             stacked = np.vstack((fgmask_3, self.color_frame, real))
@@ -297,7 +237,7 @@ class ImageSubscriber(Node):
             cv.waitKey(1)
             
         except CvBridgeError as e:
-            print(e)
+            self.get_logger().error(e)
             return
 
         cv.waitKey(1)
@@ -312,7 +252,7 @@ class ImageSubscriber(Node):
             self.vid_pub.publish(self.bridge.cv2_to_imgmsg(dpt_frame))
 
         except CvBridgeError as e:
-            print(e)
+            self.get_logger().error(e)
             return
 
         # cv.imshow("Depth", dpt_frame) # Display depth image    
@@ -335,7 +275,7 @@ class ImageSubscriber(Node):
                 self.intr.model = rs.distortion.kannala_brandt4
             self.intr.coeffs = [i for i in cameraInfo.d]
         except CvBridgeError as e:
-            print(e)
+            self.get_logger().error(e)
             return
 
     def conv_to_real_coords(self, x, y, depth):
@@ -348,8 +288,41 @@ class ImageSubscriber(Node):
                 self.get_logger().info(f"Real Coords are: {x_, y_, z_}")
                 return x_,y_,z_
         except CvBridgeError as e:
-            print(e)
+            self.get_logger().error(e)
             return
+    
+    def bg_sub(self, frame):
+        if self.intr:
+            mask = self.bgsub.apply(frame)
+            _, mask = cv.threshold(mask, 250, 255, cv.THRESH_BINARY)
+            mask = cv.morphologyEx(mask, cv.MORPH_OPEN, self.kernel)
+            self.fgmask = mask 
+        # fgmask = cv.erode(fgmask, kernel=self.kernel, iterations = 1)
+        # fgmask = cv.dilate(fgmask, kernel=self.kernel, iterations = 2)
+        else: 
+            mask = self.bgsub.apply(self.color_frame)
+            _, mask = cv.threshold(mask, 250, 255, cv.THRESH_BINARY)
+            mask = cv.morphologyEx(mask, cv.MORPH_OPEN, self.kernel)
+            self.fgmask = mask 
+        return
+
+    def remove_bg(self):
+        # try:
+        if self.intr:
+            grey = 153
+            clip_dist = 1 * 1000
+            dpt_cpy = np.asanyarray(self.depth_frame)
+            clr_cpy = np.asanyarray(self.color_frame)
+            depth_frame_3d = np.dstack((dpt_cpy, dpt_cpy, dpt_cpy))
+           #  print(depth_frame_3d)
+            bg_removed = np.where((depth_frame_3d > clip_dist) | \
+                                  (depth_frame_3d <= 0), grey, clr_cpy)
+            self.bg_removed = bg_removed
+            # stacked = np.vstack((self.bg_removed, clr_cpy))
+            # cv.imshow("Removed BG", cv.resize(stacked, None, fx=0.40, fy=0.40))
+        # except:
+        #     self.get_logger().error("Could not Remove BG")
+    
 
     """
     reduce_noise()
