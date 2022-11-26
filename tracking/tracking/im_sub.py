@@ -225,8 +225,8 @@ class ImageSubscriber(Node):
                         x_, y_, z_ = self.conv_to_real_coords(self.MaxCentroid[0], \
                                                               self.MaxCentroid[1], depth)
                         self.coords.x = x_
-                        self.coords.y = y_
-                        self.coords.z = z_
+                        self.coords.y = -y_
+                        self.coords.z = -z_
                         self.coords_pub.publish(self.coords) # Publishing coords
                 except:
                     pass
