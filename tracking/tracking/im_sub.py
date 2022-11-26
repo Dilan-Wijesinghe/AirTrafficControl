@@ -3,6 +3,7 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image, CameraInfo
 from cv_bridge import CvBridge, CvBridgeError
+from geometry_msgs.msg import Point
 import cv2 as cv
 import numpy as np
 import pyrealsense2 as rs
@@ -102,6 +103,7 @@ class ImageSubscriber(Node):
                                                   self.depth_callback, 10)
         self.intr_sub = self.create_subscription(CameraInfo, 'camera/aligned_depth_to_color/camera_info', \
                                                  self.intr_callback, 10)
+        self.coords_pub = self.create_publisher(Point, 'balloon_coords', 10)
         self.bridge = CvBridge()
 
         # Publisher that publishes to the video_frames topic
@@ -167,6 +169,7 @@ class ImageSubscriber(Node):
 
             # Detect Contours
             contours, _ = cv.findContours(fgmask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
+            self.coords = Point()
 
             # Loop over the contours
             centroids = []
@@ -219,14 +222,18 @@ class ImageSubscriber(Node):
                 try:
                     if self.intr:
                         depth = self.depth_frame[self.MaxCentroid[1], self.MaxCentroid[0]]
-                        self.conv_to_real_coords(self.MaxCentroid[0], self.MaxCentroid[1], depth)
+                        x_, y_, z_ = self.conv_to_real_coords(self.MaxCentroid[0], \
+                                                              self.MaxCentroid[1], depth)
+                        self.coords.x = x_
+                        self.coords.y = y_
+                        self.coords.z = z_
+                        self.coords_pub.publish(self.coords) # Publishing coords
                 except:
                     pass
             else:
                 print("cant do dist")
 
             # cv.imshow('Background Sub', fgmask)
-
             cv.waitKey(1)
             
         except CvBridgeError as e:
@@ -275,9 +282,9 @@ class ImageSubscriber(Node):
         try:
             if self.intr:
                 real_coords = rs.rs2_deproject_pixel_to_point(self.intr, [x,y], depth)
-                x_ = real_coords[2] * 0.01
-                y_ = real_coords[0] * 0.01
-                z_ = real_coords[1] * 0.01
+                x_ = real_coords[2] * 0.001
+                y_ = real_coords[0] * 0.001
+                z_ = real_coords[1] * 0.001
                 self.get_logger().info(f"Real Coords are: {x_, y_, z_}")
                 return x_,y_,z_
         except CvBridgeError as e:
