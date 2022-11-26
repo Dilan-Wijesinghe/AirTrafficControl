@@ -195,8 +195,10 @@ class ImageSubscriber(Node):
                 self.MaxCentroid = centroids[np.argmax(areas)]
                 print(self.MaxCentroid)
                 # --- Drawing Onto the Frames ---
-                x, y, w, h = cv.boundingRect(MaxCont) # Draw a Bounding Shape around the Max Contour
-                cv.rectangle(self.color_frame, (x,y), (x + w, y + h), (0, 0, 255), 2) # Draw rect over obj
+                ((x,y), r) = cv.minEnclosingCircle(MaxCont)
+                # x, y, w, h = cv.boundingRect(MaxCont) # Draw a Bounding Shape around the Max Contour
+                # cv.rectangle(self.color_frame, (x,y), (x + w, y + h), (0, 0, 255), 2) # Draw rect over obj
+                cv.circle(self.color_frame, (int(x), int(y)), int(r), (0, 255, 255), 2)
                 cv.circle(self.color_frame, self.MaxCentroid, 10, (24,146,221), -1) # Thickness of -1 Fills in 
                 cv.putText(self.color_frame, "Found Object", (x,y-10), cv.FONT_HERSHEY_SIMPLEX, 0.3, (0,255,0),1, cv.LINE_AA)
             except:
