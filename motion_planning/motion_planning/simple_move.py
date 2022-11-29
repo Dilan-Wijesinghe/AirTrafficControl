@@ -7,6 +7,9 @@ scene at user-defined position.
 
 PUBLISHER:
     + /planning_scene (PlanningScene) - Publish planning scene
+    + /set_pose (motion_planning_interfaces/srv/GetPose) - Set the end effector position and
+                                                           orientation
+    + /set_pos (motion_planning_interfaces/srv/GetPose) - Set the end effector position
 
 SUBSCRIBER:
     + /joint_states (JointState) - Subscribe to the joint states of the robot
@@ -14,10 +17,7 @@ SUBSCRIBER:
 SERVICES:
     + /set_box_position (motion_planning_interfaces/srv/GetPose) - Set box position in the
                                                                    planning scene
-    + /set_pos (motion_planning_interfaces/srv/GetPose) - Set the end effector position
     + /set_orient (motion_planning_interfaces/srv/GetPose) - Set the orientation
-    + /set_pose (motion_planning_interfaces/srv/GetPose) - Set the end effector position and
-                                                           orientation
     + /wait_before_execute (std_srvs/srv/SetBool) - Wait to execute after planning
     + /set_start (motion_planning_interfaces/srv/GetPose) - Set up the start point of the end
                                                             effector
@@ -87,9 +87,9 @@ class Mover(Node):
         self.scene_result = PlanningScene()
 
         # for planning trajectory
-        self.set_position = self.create_service(GetPose, 'set_pos', self.set_position_callback)
+        self.set_position = self.create_publisher(Pose, 'set_pos', self.set_position_callback)
         self.set_ori = self.create_service(GetPose, 'set_orient', self.get_orient_callback)
-        self.set_pose = self.create_service(GetPose, 'set_pose', self.set_pose_callback)
+        self.set_pose = self.create_publisher(Pose, 'set_pose', self.set_pose_callback, 10)
         self.wait_before_execute_service = self.create_service(
             Bool, "wait_before_execute", self.wait_callback)
         self.tf_buffer = Buffer() # TF buffer for our listener
@@ -210,7 +210,7 @@ class Mover(Node):
 
         return response
 
-    def set_pose_callback(self, request, response):
+    def set_pose_callback(self, request):
         """
         Get the position and orientation of the end effector.
 
@@ -230,8 +230,6 @@ class Mover(Node):
 
         if self.robot_state == State.NOTSET:
             self.robot_state = State.GO
-
-        return response
 
     async def timer_callback(self):
         """
