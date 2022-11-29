@@ -25,6 +25,7 @@ The `motion_planning_interfaces` package defines service files that can be used 
 
 ## Adding a "balloon" into rviz
 1. Make sure that the franka robot is already running (see Quickstart #1) 
+
 2. Use the command `ros2 run motion_planning arena_node`. Note that the balloon's position is hardcoded (for the moment).
 3. Run `ros2 service call /balloon_drop std_srvs/srv/Empty` to drop the balloon.
 4. You need to kill the arena_node and rerun it to test again.
