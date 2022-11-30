@@ -55,10 +55,17 @@ class hit(Node):
 
         # replace the following coordinates with actual tracking data
         if len(self.balloon_pos_x) < 40:
-            b_pos = self.balloon_pos
-            self.balloon_pos_z.append(b_pos.z)
-            self.balloon_pos_x.append(b_pos.x)
-            self.balloon_pos_y.append(b_pos.y)
+            # transform from cam to robot base frame
+            Rz = np.array([[0, 0, 1, 0], [0, 1, 0, 0], [-1, 0, 0, 0], [0, 0, 0, 1]])
+            Tcr = np.array([[0, -1, 0, 1.64], [0, 0, 1, -0.61], [1, 0, 0, 0.18], [0, 0, 0, 1]])
+            Tcr = np.matmul(Rz, Tcr)
+            v_cam = np.array([self.balloon_pos.x, self.balloon_pos.y, self.balloon_pos.z]) # balloon pos in cam frame
+            v_robot = np.matmul(Tcr, v_cam.reshape((3,1))) # balloon pos in robot base frame
+            
+            b_pos = v_robot
+            self.balloon_pos_z.append(b_pos[2])
+            self.balloon_pos_x.append(b_pos[0])
+            self.balloon_pos_y.append(b_pos[1])
 
         x = self.balloon_pos_x
         y = self.balloon_pos_y
@@ -130,3 +137,5 @@ class hit(Node):
         self.ee_pos_pub.publish(self.move_to)
 
         # TODO: Generalize the ee pose
+
+        
