@@ -310,7 +310,7 @@ class ImageSubscriber(Node):
         # try:
         if self.intr:
             grey = 153
-            clip_dist = 1 * 1000
+            clip_dist = 1.75 * 1000
             dpt_cpy = np.asanyarray(self.depth_frame)
             clr_cpy = np.asanyarray(self.color_frame)
             depth_frame_3d = np.dstack((dpt_cpy, dpt_cpy, dpt_cpy))
