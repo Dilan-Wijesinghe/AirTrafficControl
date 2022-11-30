@@ -94,10 +94,10 @@ class hit(Node):
             # z = z[total_dist < 0.2]
 
             # fit a line in x-y plane
-            def xy_line(x, k, b):
+            def xz_line(x, k, b):
                 return k*x + b
 
-            xy_param, _ = curve_fit(xy_line, x, y)
+            xz_param, _ = curve_fit(xz_line, x, y)
 
             # fit a parabola in y-z plane
             def yz_parabola(y, a, b, c):
@@ -129,10 +129,10 @@ class hit(Node):
             dist_1 = math.sqrt((x1-init_x)**2 + (y1-init_y)**2)
             dist_2 = math.sqrt((x2-init_x)**2 + (y2-init_y)**2)
             if dist_1 < dist_2:
-                pred_x = x1
+                pred_x = x
                 pred_y = y1
             else:
-                pred_x = x2
+                pred_x = x
                 pred_y = y2
 
             # move the ee to this position
