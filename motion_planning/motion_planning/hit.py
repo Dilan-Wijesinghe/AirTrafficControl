@@ -3,10 +3,10 @@ import math
 import numpy as np
 from scipy.optimize import curve_fit
 from geometry_msgs.msg import Point, Pose
-import simple_move as move
+# import simple_move as move
 from enum import Enum, auto
 from rclpy.node import Node
-from motion_planning_interfaces.srv import GetPose
+# from motion_planning_interfaces.srv import GetPose
 
 
 class State(Enum):
@@ -37,9 +37,9 @@ class hit(Node):
         self.move_to = Pose()
 
     def balloon_callback(self, msg):
-        self.balloon_pos.x = msg.point.x
-        self.balloon_pos.y = msg.point.y
-        self.balloon_pos.z = msg.point.z
+        self.balloon_pos.x = msg.x
+        self.balloon_pos.y = msg.y
+        self.balloon_pos.z = msg.z
 
 
     def timer_callback(self):
@@ -60,13 +60,14 @@ class hit(Node):
             Rz = np.array([[0, 0, 1, 0], [0, 1, 0, 0], [-1, 0, 0, 0], [0, 0, 0, 1]])
             Tcr = np.array([[0, -1, 0, 1.64], [0, 0, 1, -0.61], [1, 0, 0, 0.18], [0, 0, 0, 1]])
             Tcr = np.matmul(Rz, Tcr)
-            v_cam = np.array([self.balloon_pos.x, self.balloon_pos.y, self.balloon_pos.z]) # balloon pos in cam frame
-            v_robot = np.matmul(Tcr, v_cam.reshape((3,1))) # balloon pos in robot base frame
+            v_cam = np.array([self.balloon_pos.x, self.balloon_pos.y, self.balloon_pos.z, 0]) # balloon pos in cam frame
+            v_robot = np.matmul(Tcr, v_cam.reshape((4,1))) # balloon pos in robot base frame
+            v_robot = v_robot[0:3]
             
             b_pos = v_robot
-            self.balloon_pos_z.append(b_pos[2])
-            self.balloon_pos_x.append(b_pos[0])
-            self.balloon_pos_y.append(b_pos[1])
+            self.balloon_pos_z.append(b_pos[2][0])
+            self.balloon_pos_x.append(b_pos[0][0])
+            self.balloon_pos_y.append(b_pos[1][0])
         
         else:
             self.state = State.GO
@@ -144,4 +145,12 @@ class hit(Node):
 
         # TODO: Generalize the ee pose
 
-        
+def main(args=None):
+    rclpy.init(args=None)
+    node = hit()
+    rclpy.spin(node)
+
+
+if __name__ == '__main__':
+    main()
+ 

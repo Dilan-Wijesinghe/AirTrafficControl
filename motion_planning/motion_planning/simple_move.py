@@ -87,9 +87,9 @@ class Mover(Node):
         self.scene_result = PlanningScene()
 
         # for planning trajectory
-        self.set_position = self.create_publisher(Pose, 'set_pos', self.set_position_callback)
+        self.set_position = self.create_subscription(Pose, 'set_pos', self.set_position_callback,10)
         self.set_ori = self.create_service(GetPose, 'set_orient', self.get_orient_callback)
-        self.set_pose = self.create_publisher(Pose, 'set_pose', self.set_pose_callback, 10)
+        self.set_pose = self.create_subscription(Pose, 'set_pose', self.set_pose_callback, 10)
         self.wait_before_execute_service = self.create_service(
             Bool, "wait_before_execute", self.wait_callback)
         self.tf_buffer = Buffer() # TF buffer for our listener
@@ -219,14 +219,14 @@ class Mover(Node):
 
         Returns: A GetPoseResponse
         """
-        self.get_logger().info("Starting Set Pose")
-        self.ik_pose.position.x = request.pose.position.x
-        self.ik_pose.position.y = request.pose.position.y
-        self.ik_pose.position.z = request.pose.position.z
-        self.ik_pose.orientation.x = request.pose.orientation.x
-        self.ik_pose.orientation.y = request.pose.orientation.y
-        self.ik_pose.orientation.z = request.pose.orientation.z
-        self.ik_pose.orientation.w = request.pose.orientation.w
+        self.get_logger().info("Pose Got")
+        self.ik_pose.position.x = request.position.x
+        self.ik_pose.position.y = request.position.y
+        self.ik_pose.position.z = request.position.z
+        self.ik_pose.orientation.x = request.orientation.x
+        self.ik_pose.orientation.y = request.orientation.y
+        self.ik_pose.orientation.z = request.orientation.z
+        self.ik_pose.orientation.w = request.orientation.w
 
         if self.robot_state == State.NOTSET:
             self.robot_state = State.GO
