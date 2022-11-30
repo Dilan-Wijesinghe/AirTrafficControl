@@ -6,6 +6,7 @@ from cv_bridge import CvBridge, CvBridgeError
 from geometry_msgs.msg import Point
 import cv2 as cv
 import numpy as np
+from enum import Enum, auto
 import pyrealsense2 as rs
 
 
@@ -81,6 +82,15 @@ def count_cameras():
             temp_camera.release()
             continue
         return i
+    
+
+class State(Enum):
+    """
+    Current state of the robot.
+    """
+
+    NOTPUB = auto()
+    PUB = auto()
 
 """
 class ImageSubscriber
@@ -124,6 +134,7 @@ class ImageSubscriber(Node):
         # detectShadows-> Boolean determining whether to detect shadows
         self.bgsub = cv.createBackgroundSubtractorMOG2(history = 500, varThreshold = 16, \
                                                        detectShadows = False)
+        self.state = State.PUB
         
         # Frame Instantiation
         self.intr = None
@@ -178,31 +189,33 @@ class ImageSubscriber(Node):
                 MaxCont = contours[np.argmax(areas)]
             
             except:
-                print("No Contours")
-
-            # --- Current Moment for Centroid Finding ---
-            for cont in contours:
-                # if cv.contourArea(cont) > 1000:
-                currMoment = cv.moments(cont)
-                try:
-                    cx = int(currMoment['m10']/currMoment['m00'])
-                    cy = int(currMoment['m01']/currMoment['m00'])
-                    # print("Adding Centroid")
-                    centroids.append([cx, cy])
-                except:
-                    print("Centroid Not Found")
-                
+                print("No Contours") 
 
             try:
-                self.MaxCentroid = centroids[np.argmax(areas)]
+                
                 # print(self.MaxCentroid)
                 # --- Drawing Onto the Frames ---
                 ((x,y), r) = cv.minEnclosingCircle(MaxCont)
-                # x, y, w, h = cv.boundingRect(MaxCont) # Draw a Bounding Shape around the Max Contour
-                # cv.rectangle(self.color_frame, (x,y), (x + w, y + h), (0, 0, 255), 2) # Draw rect over obj
-                cv.circle(self.color_frame, (int(x), int(y)), int(r), (0, 255, 255), 2)
-                cv.circle(self.color_frame, self.MaxCentroid, 10, (24,146,221), -1) # Thickness of -1 Fills in 
-                cv.putText(self.color_frame, "Found Object", (x,y-10), cv.FONT_HERSHEY_SIMPLEX, 0.3, (0,255,0),1, cv.LINE_AA)
+                if r > 50:
+                    # --- Current Moment for Centroid Finding ---
+                    for cont in contours:
+                        # if cv.contourArea(cont) > 1000:
+                        currMoment = cv.moments(cont)
+                        try:
+                            cx = int(currMoment['m10']/currMoment['m00'])
+                            cy = int(currMoment['m01']/currMoment['m00'])
+                            # print("Adding Centroid")
+                            centroids.append([cx, cy])
+                        except:
+                            print("Centroid Not Found")
+                    self.MaxCentroid = centroids[np.argmax(areas)]
+                    # x, y, w, h = cv.boundingRect(MaxCont) # Draw a Bounding Shape around the Max Contour
+                    # cv.rectangle(self.color_frame, (x,y), (x + w, y + h), (0, 0, 255), 2) # Draw rect over obj
+                    cv.circle(self.color_frame, (int(x), int(y)), int(r), (0, 255, 255), 2)
+                    cv.circle(self.color_frame, self.MaxCentroid, 10, (24,146,221), -1) # Thickness of -1 Fills in 
+                    cv.putText(self.color_frame, "Found Object", (x,y-10), cv.FONT_HERSHEY_SIMPLEX, 0.3, (0,255,0),1, cv.LINE_AA)
+                else: # r < 25
+                    self.state = State.NOTPUB
             except:
                 pass
 
@@ -227,7 +240,9 @@ class ImageSubscriber(Node):
                         self.coords.x = x_
                         self.coords.y = -y_
                         self.coords.z = -z_
-                        self.coords_pub.publish(self.coords) # Publishing coords
+
+                        if self.state == State.PUB:
+                            self.coords_pub.publish(self.coords) # Publishing coords
                 except:
                     pass
             else:
