@@ -134,7 +134,7 @@ class ImageSubscriber(Node):
         # detectShadows-> Boolean determining whether to detect shadows
         self.bgsub = cv.createBackgroundSubtractorMOG2(history = 500, varThreshold = 16, \
                                                        detectShadows = False)
-        self.state = State.PUB
+        self.state = State.NOTPUB
         
         # Frame Instantiation
         self.intr = None
@@ -165,17 +165,11 @@ class ImageSubscriber(Node):
             self.get_logger().info("Receiving video_frames", once=True)
             # curr_frame = self.bridge.imgmsg_to_cv2(data, desired_encoding='mono8') # Convert ROS image msg to OpenCV image
             curr_frame = self.bridge.imgmsg_to_cv2(data, desired_encoding='bgr8') # Convert ROS image msg to OpenCV image
-            self.color_frame = curr_frame
+            self.color_frame = cv.GaussianBlur(curr_frame, (5,5), 0)
             self.vid_pub.publish(self.bridge.cv2_to_imgmsg(self.color_frame)) # Publish msg 
 
-            self.remove_bg() # Remove background
+            self.remove_bg(clip_dist=1.75) # Remove background
             self.bg_sub(self.bg_removed) # Apply Background subtraction
-
-            # --- Color Variations ---
-            # gray = cv.cvtColor(curr_frame, cv.COLOR_BGR2GRAY)
-            # frame_HSV = cv.cvtColor(curr_frame, cv.COLOR_BGR2HSV)
-            # frame_thresh = cv.inRange(frame_HSV, (low_h, low_s, low_v), (high_h, high_s, high_v))
-            # cv.imshow(wind_name, frame_thresh)
 
             # Detect Contours
             contours, _ = cv.findContours(self.fgmask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
@@ -184,7 +178,7 @@ class ImageSubscriber(Node):
             # Loop over the contours
             centroids = []
             try:
-                print("Found Contours")
+                # print("Found Contours")
                 areas = [cv.contourArea(cont) for cont in contours]
                 MaxCont = contours[np.argmax(areas)]
             
@@ -192,11 +186,12 @@ class ImageSubscriber(Node):
                 print("No Contours") 
 
             try:
-                
                 # print(self.MaxCentroid)
                 # --- Drawing Onto the Frames ---
                 ((x,y), r) = cv.minEnclosingCircle(MaxCont)
                 if r > 50:
+                    self.state = State.PUB # Change ability to publish
+                    print("Found An Object to Publish")
                     # --- Current Moment for Centroid Finding ---
                     for cont in contours:
                         # if cv.contourArea(cont) > 1000:
@@ -214,8 +209,8 @@ class ImageSubscriber(Node):
                     cv.circle(self.color_frame, (int(x), int(y)), int(r), (0, 255, 255), 2)
                     cv.circle(self.color_frame, self.MaxCentroid, 10, (24,146,221), -1) # Thickness of -1 Fills in 
                     cv.putText(self.color_frame, "Found Object", (x,y-10), cv.FONT_HERSHEY_SIMPLEX, 0.3, (0,255,0),1, cv.LINE_AA)
-                else: # r < 25
-                    self.state = State.NOTPUB
+                else: # r < 50
+                    self.state = State.NOTPUB # If it is too small, do not publish
             except:
                 pass
 
@@ -242,11 +237,13 @@ class ImageSubscriber(Node):
                         self.coords.z = -z_
 
                         if self.state == State.PUB:
+                            self.get_logger().info(f"Real Coords are: \
+                                {self.coords.x, self.coords.y, self.coords.z}")
                             self.coords_pub.publish(self.coords) # Publishing coords
                 except:
                     pass
             else:
-                print("cant do dist")
+                print("Cannot Calculate Centroid Depth")
 
             # cv.imshow('Background Sub', fgmask)
             cv.waitKey(1)
@@ -259,11 +256,19 @@ class ImageSubscriber(Node):
      
     
     def depth_callback(self, depthInfo):
+        """
+        Callback function that obtains the frames from the depth camera
+
+        Args: depthInfo : Information obtained from the aligned_depth_to_color/image_raw topic
+
+        Returns: None
+        """
         try:
             self.get_logger().info("Receiving depth frames", once=True)
             curr_frame = self.bridge.imgmsg_to_cv2(depthInfo)
             self.depth_frame = curr_frame
-            dpt_frame = cv.applyColorMap(cv.convertScaleAbs(self.depth_frame, alpha=0.3), cv.COLORMAP_JET)
+            dpt_frame = cv.applyColorMap(cv.convertScaleAbs(self.depth_frame, alpha=0.3), \
+                                         cv.COLORMAP_JET)
             self.vid_pub.publish(self.bridge.cv2_to_imgmsg(dpt_frame))
 
         except CvBridgeError as e:
@@ -274,6 +279,15 @@ class ImageSubscriber(Node):
         cv.waitKey(1)
 
     def intr_callback(self, cameraInfo):
+        """
+        Instrinsic Callback function. Gets the camera information of the Depth frame
+        In order to apply the rs2_deproject_pixel_to_point function
+
+        Args: cameraInfo: Camera information obtained from the aligned_depth_to_color/camera_info
+                          topic
+        
+        Returns: None
+        """
         try:
             if self.intr:
                 return
@@ -294,19 +308,36 @@ class ImageSubscriber(Node):
             return
 
     def conv_to_real_coords(self, x, y, depth):
+        """
+        Converts coordinates into real coordinates using rs2_deproject_pixel_to_point
+        
+        Args: x, y : Coords of Centroid read from camera
+              depth : Depth calculated using the aligned_depth_to_color
+
+        Returns: None
+        """
         try:
             if self.intr:
                 real_coords = rs.rs2_deproject_pixel_to_point(self.intr, [x,y], depth)
                 x_ = real_coords[2] * 0.001
                 y_ = real_coords[0] * 0.001
                 z_ = real_coords[1] * 0.001
-                self.get_logger().info(f"Real Coords are: {x_, y_, z_}")
+                # self.get_logger().info(f"Real Coords are: {x_, y_, z_}")
                 return x_,y_,z_
         except CvBridgeError as e:
             self.get_logger().error(e)
             return
     
     def bg_sub(self, frame):
+        """
+        Performs Background Subtraction on the passed in frame, else
+        does so on the color_frame. This prevents an error from occuring 
+        if there is no moving object in the scene
+
+        Args: frame : video frames to perform background subtraction on
+
+        Returns: None 
+        """
         if self.intr:
             mask = self.bgsub.apply(frame)
             _, mask = cv.threshold(mask, 250, 255, cv.THRESH_BINARY)
@@ -321,34 +352,34 @@ class ImageSubscriber(Node):
             self.fgmask = mask 
         return
 
-    def remove_bg(self):
-        # try:
+    
+    def remove_bg(self, clip_dist):
+        """
+        Removes the Background using a clipping distance
+
+        Args: clip_dist : a distance in meters to clip to
+
+        Returns: None
+        """
         if self.intr:
             grey = 153
-            clip_dist = 1.75 * 1000
+            clip = clip_dist * 1000
             dpt_cpy = np.asanyarray(self.depth_frame)
             clr_cpy = np.asanyarray(self.color_frame)
             depth_frame_3d = np.dstack((dpt_cpy, dpt_cpy, dpt_cpy))
-           #  print(depth_frame_3d)
-            bg_removed = np.where((depth_frame_3d > clip_dist) | \
+            bg_removed = np.where((depth_frame_3d > clip) | \
                                   (depth_frame_3d <= 0), grey, clr_cpy)
             self.bg_removed = bg_removed
-            # stacked = np.vstack((self.bg_removed, clr_cpy))
-            # cv.imshow("Removed BG", cv.resize(stacked, None, fx=0.40, fy=0.40))
-        # except:
-        #     self.get_logger().error("Could not Remove BG")
     
 
-    """
-    reduce_noise()
-
-    Helper function that uses fastNlMeansDenoisingColored to reduce noise withing the current frame
-
-    Input - curr_frame - The current frame
-          - fgmask - Masked image
-    Returns - noiseless_curr_frame - The current frame with reduced noise
-    """
     def reduce_noise(self, curr_frame, fgmask):
+        """
+        Helper function that uses fastNlMeansDenoisingColored to reduce noise withing the current frame
+
+        Input - curr_frame - The current frame
+                - fgmask - Masked image
+        Returns - noiseless_curr_frame - The current frame with reduced noise
+        """
         # Need some noise reduction here
         noiseless_mask = cv.fastNlMeansDenoising(fgmask, None, 20, 7, 21) 
         fgmask = noiseless_mask
@@ -430,3 +461,12 @@ if __name__ == '__main__':
 # cv.imshow('Contours', curr_frame)
 # cv.imshow("Camera + Contours", frame_HSV) # Display image
 # cv.imshow("FG Mask", fgmask) # Display foreground mask
+
+
+
+
+# --- Color Variations ---
+# gray = cv.cvtColor(curr_frame, cv.COLOR_BGR2GRAY)
+# frame_HSV = cv.cvtColor(curr_frame, cv.COLOR_BGR2HSV)
+# frame_thresh = cv.inRange(frame_HSV, (low_h, low_s, low_v), (high_h, high_s, high_v))
+# cv.imshow(wind_name, frame_thresh)
