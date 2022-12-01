@@ -16,7 +16,7 @@ class State(Enum):
 
     NOTSET = auto()
     GO = auto()
-    IN_HIT = auto()
+    STOP = auto()
 
 
 class hit(Node):
@@ -24,7 +24,7 @@ class hit(Node):
     def __init__(self):
         super().__init__('hit')
 
-        timer_period = 0.001
+        timer_period = 0.05
         self.timer = self.create_timer(timer_period, self.timer_callback)
         self.balloon_pos = self.create_subscription(Point, 'balloon_coords', self.balloon_callback, 10)
         self.ee_pos_pub = self.create_publisher(Pose, 'set_pose', 10)
@@ -69,7 +69,7 @@ class hit(Node):
             self.balloon_pos_x.append(b_pos[0][0])
             self.balloon_pos_y.append(b_pos[1][0])
         
-        else:
+        elif self.state == State.NOTSET:
             self.state = State.GO
         
         if self.state == State.GO:
@@ -77,10 +77,10 @@ class hit(Node):
             y = self.balloon_pos_y
             z = self.balloon_pos_z
             # fit a line in x-y plane
-            def xy_line(x, k, b):
+            def xz_line(x, k, b):
                 return k*x + b
 
-            xy_param, _ = curve_fit(xy_line, x, y)
+            xz_param, _ = curve_fit(xz_line, x, y)
 
             # fit a parabola in y-z plane
             def yz_parabola(y, a, b, c):
@@ -100,22 +100,21 @@ class hit(Node):
             y1 = (-parabola_b + del_eqn)/(2*parabola_a)
             y2 = (-parabola_b - del_eqn)/(2*parabola_a)
 
-            line_k = xy_param[0]
-            line_b = xy_param[1]
-            x1 = (y1-line_b)/line_k
-            x2 = (y2-line_b)/line_k
+            line_k = xz_param[0]
+            line_b = xz_param[1]
+            x = (z - line_b)/line_k
 
             # TODO: choose the x y that's further from the 
             # initial position of the balloon
             init_x = self.balloon_pos_x[0]
             init_y = self.balloon_pos_y[0]
-            dist_1 = math.sqrt((x1-init_x)**2 + (y1-init_y)**2)
-            dist_2 = math.sqrt((x2-init_x)**2 + (y2-init_y)**2)
+            dist_1 = math.sqrt((x-init_x)**2 + (y1-init_y)**2)
+            dist_2 = math.sqrt((x-init_x)**2 + (y2-init_y)**2)
             if dist_1 < dist_2:
-                pred_x = x1
+                pred_x = x
                 pred_y = y1
             else:
-                pred_x = x2
+                pred_x = x
                 pred_y = y2
 
             # move the ee to this position
@@ -141,7 +140,9 @@ class hit(Node):
 
             # publish this to Inverse Kinematics and move the arm
             self.ee_pos_pub.publish(self.move_to)
-            self.state = State.NOTSET
+            self.state = State.STOP
+
+            self.get_logger().info("predicted point" + str(self.move_to))
 
         # TODO: Generalize the ee pose
 
