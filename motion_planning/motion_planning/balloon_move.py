@@ -383,7 +383,7 @@ class Mover(Node):
             orient_cons.header.stamp = self.get_clock().now().to_msg()
             orient_cons.header.frame_id = 'panda_hand'
             orient_cons.orientation = self.orient_constraint
-            orient_cons.link_name = 'panda_hand'
+            orient_cons.link_name = 'panda_hand_tcp'
             orient_cons.absolute_x_axis_tolerance = self.joint_tolerance
             orient_cons.absolute_y_axis_tolerance = self.joint_tolerance
             orient_cons.absolute_z_axis_tolerance = self.joint_tolerance
