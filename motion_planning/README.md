@@ -7,7 +7,7 @@
     Note that this quaternion can be changed, so long as the ee is level with some plane. Whatever quaternion position is chosen, make sure to change the hardcoded variable "self.orient_cons" to make sure trajectory planning is executed appropriately.
 4. Now, using the command `ros2 service call /set_pos motion_planning_interfaces/srv/GetPose "pose: {position: {x: ${x_pos}, y: ${y_pos}, z: ${z_pos}}}"` in a separate (sourced) terminal, the e-e of the robot can be moved as per the user's inputs.
 
-ALTERNATIVELY:
+# ALTERNATIVELY:
 4. Use the command `ros2 run motion_planning arena_node` to launch the balloon_marker. Note that the balloon's position is hardcoded (for the moment).
 5. Run `ros2 service call /balloon_drop std_srvs/srv/Empty` to drop the balloon.
 6. You need to kill the arena_node and rerun it to test again.
