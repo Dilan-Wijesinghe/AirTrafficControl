@@ -132,7 +132,7 @@ class ImageSubscriber(Node):
         # varThreshold -> How sensitive to look at the foreground objects. 
         #              -> Low varThreshold is more sensitive, high is less
         # detectShadows-> Boolean determining whether to detect shadows
-        self.bgsub = cv.createBackgroundSubtractorMOG2(history = 500, varThreshold = 16, \
+        self.bgsub = cv.createBackgroundSubtractorMOG2(history = 500, varThreshold = 250, \
                                                        detectShadows = False)
         self.state = State.NOTPUB
         
@@ -168,49 +168,50 @@ class ImageSubscriber(Node):
             self.color_frame = cv.GaussianBlur(curr_frame, (5,5), 0)
             self.vid_pub.publish(self.bridge.cv2_to_imgmsg(self.color_frame)) # Publish msg 
 
-            self.remove_bg(clip_dist=1.75) # Remove background
+            self.remove_bg(clip_dist=2) # Remove background
             self.bg_sub(self.bg_removed) # Apply Background subtraction
 
             # Detect Contours
             contours, _ = cv.findContours(self.fgmask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
             self.coords = Point()
 
-            # Loop over the contours
-            centroids = []
+           
             try:
                 # print("Found Contours")
-                areas = [cv.contourArea(cont) for cont in contours]
-                MaxCont = contours[np.argmax(areas)]
+                areas = [cv.contourArea(cont) for cont in contours] # Loop over the contours
+                MaxCont = contours[np.argmax(areas)] # And find areas. Then find Max
             
             except:
                 print("No Contours") 
 
+            centroids = [] 
             try:
                 # print(self.MaxCentroid)
                 # --- Drawing Onto the Frames ---
                 ((x,y), r) = cv.minEnclosingCircle(MaxCont)
-                if r > 50:
-                    self.state = State.PUB # Change ability to publish
-                    print("Found An Object to Publish")
-                    # --- Current Moment for Centroid Finding ---
-                    for cont in contours:
-                        # if cv.contourArea(cont) > 1000:
-                        currMoment = cv.moments(cont)
-                        try:
-                            cx = int(currMoment['m10']/currMoment['m00'])
-                            cy = int(currMoment['m01']/currMoment['m00'])
-                            # print("Adding Centroid")
-                            centroids.append([cx, cy])
-                        except:
-                            print("Centroid Not Found")
-                    self.MaxCentroid = centroids[np.argmax(areas)]
-                    # x, y, w, h = cv.boundingRect(MaxCont) # Draw a Bounding Shape around the Max Contour
-                    # cv.rectangle(self.color_frame, (x,y), (x + w, y + h), (0, 0, 255), 2) # Draw rect over obj
-                    cv.circle(self.color_frame, (int(x), int(y)), int(r), (0, 255, 255), 2)
-                    cv.circle(self.color_frame, self.MaxCentroid, 10, (24,146,221), -1) # Thickness of -1 Fills in 
-                    cv.putText(self.color_frame, "Found Object", (x,y-10), cv.FONT_HERSHEY_SIMPLEX, 0.3, (0,255,0),1, cv.LINE_AA)
-                else: # r < 50
-                    self.state = State.NOTPUB # If it is too small, do not publish
+                if self.intr:
+                    if r > 50:
+                        self.state = State.PUB # Change ability to publish
+                        print("Found An Object to Publish")
+                        # --- Current Moment for Centroid Finding ---
+                        for cont in contours:
+                            # if cv.contourArea(cont) > 1000:
+                            currMoment = cv.moments(cont)
+                            try:
+                                cx = int(currMoment['m10']/currMoment['m00'])
+                                cy = int(currMoment['m01']/currMoment['m00'])
+                                # print("Adding Centroid")
+                                centroids.append([cx, cy])
+                            except:
+                                print("Centroid Not Found")
+                        self.MaxCentroid = centroids[np.argmax(areas)]
+                        # x, y, w, h = cv.boundingRect(MaxCont) # Draw a Bounding Shape around the Max Contour
+                        # cv.rectangle(self.color_frame, (x,y), (x + w, y + h), (0, 0, 255), 2) # Draw rect over obj
+                        cv.circle(self.color_frame, (int(x), int(y)), int(r), (0, 255, 255), 2)
+                        cv.circle(self.color_frame, self.MaxCentroid, 10, (24,146,221), -1) # Thickness of -1 Fills in 
+                        cv.putText(self.color_frame, "Found Object", (x,y-10), cv.FONT_HERSHEY_SIMPLEX, 0.3, (0,255,0),1, cv.LINE_AA)
+                    else: # r < 50
+                        self.state = State.NOTPUB # If it is too small, do not publish
             except:
                 pass
 
@@ -230,11 +231,12 @@ class ImageSubscriber(Node):
                 try:
                     if self.intr:
                         depth = self.depth_frame[self.MaxCentroid[1], self.MaxCentroid[0]]
+                        # depth = self.depth_frame[self.MaxCentroid[0], self.MaxCentroid[1]]
                         x_, y_, z_ = self.conv_to_real_coords(self.MaxCentroid[0], \
                                                               self.MaxCentroid[1], depth)
                         self.coords.x = x_
-                        self.coords.y = -y_
-                        self.coords.z = -z_
+                        self.coords.y = y_
+                        self.coords.z = z_
 
                         if self.state == State.PUB:
                             self.get_logger().info(f"Real Coords are: \
@@ -319,9 +321,12 @@ class ImageSubscriber(Node):
         try:
             if self.intr:
                 real_coords = rs.rs2_deproject_pixel_to_point(self.intr, [x,y], depth)
-                x_ = real_coords[2] * 0.001
-                y_ = real_coords[0] * 0.001
-                z_ = real_coords[1] * 0.001
+                # x_ = real_coords[2] * 0.001
+                # y_ = real_coords[0] * 0.001
+                # z_ = real_coords[1] * 0.001
+                x_ = real_coords[0] * 0.001
+                y_ = real_coords[1] * 0.001
+                z_ = real_coords[2] * 0.001
                 # self.get_logger().info(f"Real Coords are: {x_, y_, z_}")
                 return x_,y_,z_
         except CvBridgeError as e:
@@ -370,11 +375,13 @@ class ImageSubscriber(Node):
             bg_removed = np.where((depth_frame_3d > clip) | \
                                   (depth_frame_3d <= 0), grey, clr_cpy)
             self.bg_removed = bg_removed
+            
+            # ValueError: operands could not be broadcast together with shapes (480,848,3) () (720,1280,3) 
     
 
     def reduce_noise(self, curr_frame, fgmask):
         """
-        Helper function that uses fastNlMeansDenoisingColored to reduce noise withing the current frame
+        Helper function that uses fastNlMeansDenoisingColored to reduce noise within the current frame
 
         Input - curr_frame - The current frame
                 - fgmask - Masked image

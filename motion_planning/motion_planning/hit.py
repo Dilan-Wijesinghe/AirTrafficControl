@@ -6,6 +6,7 @@ from geometry_msgs.msg import Point, Pose
 # import simple_move as move
 from enum import Enum, auto
 from rclpy.node import Node
+import matplotlib.pyplot as plt  
 # from motion_planning_interfaces.srv import GetPose
 
 
@@ -24,7 +25,7 @@ class hit(Node):
     def __init__(self):
         super().__init__('hit')
 
-        timer_period = 0.05
+        timer_period = 0.01
         self.timer = self.create_timer(timer_period, self.timer_callback)
         self.balloon_pos = self.create_subscription(Point, 'balloon_coords', self.balloon_callback, 10)
         self.ee_pos_pub = self.create_publisher(Pose, 'set_pose', 10)
@@ -55,13 +56,13 @@ class hit(Node):
         #            out the z coordinate.
 
         # replace the following coordinates with actual tracking data
-        if len(self.balloon_pos_x) < 40:
+        if len(self.balloon_pos_x) < 200:
             # transform from cam to robot base frame
-            Rz = np.array([[0, 0, 1, 0], [0, 1, 0, 0], [-1, 0, 0, 0], [0, 0, 0, 1]])
-            Tcr = np.array([[0, -1, 0, 1.64], [0, 0, 1, -0.61], [1, 0, 0, 0.18], [0, 0, 0, 1]])
-            Tcr = np.matmul(Rz, Tcr)
+            Tcr = np.array([[1,0,0,-(0.92+0.56)], [0,-1,0,-0.03], [0,0,-1,-(1.85-0.09)], [0,0,0,1]])
             v_cam = np.array([self.balloon_pos.x, self.balloon_pos.y, self.balloon_pos.z, 0]) # balloon pos in cam frame
             v_robot = np.matmul(Tcr, v_cam.reshape((4,1))) # balloon pos in robot base frame
+            
+            # The points used for curve fit are already in the robot base frame
             v_robot = v_robot[0:3]
             
             b_pos = v_robot
@@ -73,14 +74,30 @@ class hit(Node):
             self.state = State.GO
         
         if self.state == State.GO:
-            x = self.balloon_pos_x
-            y = self.balloon_pos_y
-            z = self.balloon_pos_z
+            x = np.array(self.balloon_pos_x)
+            y = np.array(self.balloon_pos_y)
+            z = np.array(self.balloon_pos_z)
+
+            # # calculate COM for all the points
+            # comx = np.sum(np.array(self.balloon_pos_x))/len(self.balloon_pos_x)
+            # comy = np.sum(np.array(self.balloon_pos_y))/len(self.balloon_pos_x)
+            # comz = np.sum(np.array(self.balloon_pos_z))/len(self.balloon_pos_x)
+
+            # # calculate the distance between points and COM
+            # dist_x = np.array(self.balloon_pos_x) - comx
+            # dist_y = np.array(self.balloon_pos_y) - comy
+            # dist_z = np.array(self.balloon_pos_z) - comz
+            # total_dist = np.sqrt(np.power(dist_x, 2) + np.power(dist_y, 2) + np.power(dist_z, 2))
+
+            # x = x[total_dist < 0.2]
+            # y = y[total_dist < 0.2]
+            # z = z[total_dist < 0.2]
+
             # fit a line in x-y plane
-            def xz_line(x, k, b):
+            def xy_line(x, k, b):
                 return k*x + b
 
-            xz_param, _ = curve_fit(xz_line, x, y)
+            xy_param, _ = curve_fit(xy_line, x, y)
 
             # fit a parabola in y-z plane
             def yz_parabola(y, a, b, c):
@@ -100,21 +117,22 @@ class hit(Node):
             y1 = (-parabola_b + del_eqn)/(2*parabola_a)
             y2 = (-parabola_b - del_eqn)/(2*parabola_a)
 
-            line_k = xz_param[0]
-            line_b = xz_param[1]
-            x = (z - line_b)/line_k
+            line_k = xy_param[0]
+            line_b = xy_param[1]
+            x1 = (y1 - line_b)/line_k
+            x2 = (y2 - line_b)/line_k
 
             # TODO: choose the x y that's further from the 
             # initial position of the balloon
-            init_x = self.balloon_pos_x[0]
-            init_y = self.balloon_pos_y[0]
-            dist_1 = math.sqrt((x-init_x)**2 + (y1-init_y)**2)
-            dist_2 = math.sqrt((x-init_x)**2 + (y2-init_y)**2)
+            init_x = 0
+            init_y = 0
+            dist_1 = math.sqrt((x1-init_x)**2 + (y1-init_y)**2)
+            dist_2 = math.sqrt((x2-init_x)**2 + (y2-init_y)**2)
             if dist_1 < dist_2:
-                pred_x = x
+                pred_x = x1
                 pred_y = y1
             else:
-                pred_x = x
+                pred_x = x2
                 pred_y = y2
 
             # move the ee to this position
@@ -141,6 +159,16 @@ class hit(Node):
             # publish this to Inverse Kinematics and move the arm
             self.ee_pos_pub.publish(self.move_to)
             self.state = State.STOP
+
+            fig = plt.figure()
+            ax = plt.axes(projection='3d')
+            ax.plot(x, y, z, 'xk')
+            ax.plot(x[0], y[0], z[0], 'ob')
+            ax.plot(pred_x, pred_y, pred_z, 'xr')
+            ax.set_xlabel('x')
+            ax.set_ylabel('y')
+            ax.set_zlabel('z')
+            plt.show()
 
             self.get_logger().info("predicted point" + str(self.move_to))
 
