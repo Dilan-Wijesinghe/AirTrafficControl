@@ -33,11 +33,13 @@ from visualization_msgs.msg import Marker
 from tf2_ros import TransformBroadcaster
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
+from motion_planning_interfaces.srv import Place
 
 
 class State(Enum):
     """Current state of the system. Determines what timer do in each state."""
 
+    START = auto()
     PLACE_BALLOON = auto()
     DROP_BALLOON = auto()
 
@@ -53,12 +55,14 @@ class Arena(Node):
         self.balloon_pub = self.create_publisher(Marker, "balloon_marker", 10)
         self.balloon_drop = self.create_service(
             Empty, "balloon_drop", self.drop_callback)
+        self.balloon_drop = self.create_service(
+            Place, "balloon_place", self.place_callback)
 
-        self.state = State.PLACE_BALLOON
+        self.state = State.START
         self.broadcaster = TransformBroadcaster(self)
         self.time = 0.0
         # HARD-CODED position of the balloon
-        self.balloon_place_initial = Point(x=0.4, y=0.15, z=5.0)
+        self.balloon_place_initial = Point()
         self.balloon_z_initial = self.balloon_place_initial.z
         # self.balloon_pos = self.balloon_place_initial
 
@@ -109,30 +113,31 @@ class Arena(Node):
         self.marker_balloon.scale.x = 2.0 * self.balloon_radius_x
         self.marker_balloon.scale.y = 2.0 * self.balloon_radius_y
         self.marker_balloon.scale.z = self.marker_balloon.scale.x
-        self.marker_balloon.pose.position = self.balloon_place_initial
+        # self.marker_balloon.pose.position = self.balloon_place_initial
 
         self.time = 0.0
 
     def timer_callback(self):
         """Check different states to determine which function to call."""
         # print(self.accel_g)
-        self.world_balloon.header.stamp = self.get_clock().now().to_msg()
-        self.world_balloon.header.frame_id = "panda_link0"
-        self.world_balloon.child_frame_id = "balloon"
-        self.world_balloon.transform.translation.x = self.marker_balloon.pose.position.x
-        self.world_balloon.transform.translation.y = self.marker_balloon.pose.position.y
-        self.world_balloon.transform.translation.z = self.marker_balloon.pose.position.z
-        self.broadcaster.sendTransform(self.world_balloon)
-        self.balloon_pub.publish(self.marker_balloon)
+        if self.state != State.START:
+            self.world_balloon.header.stamp = self.get_clock().now().to_msg()
+            self.world_balloon.header.frame_id = "panda_link0"
+            self.world_balloon.child_frame_id = "balloon"
+            self.world_balloon.transform.translation.x = self.marker_balloon.pose.position.x
+            self.world_balloon.transform.translation.y = self.marker_balloon.pose.position.y
+            self.world_balloon.transform.translation.z = self.marker_balloon.pose.position.z
+            self.broadcaster.sendTransform(self.world_balloon)
+            self.balloon_pub.publish(self.marker_balloon)
 
-        if self.state == State.DROP_BALLOON:
-            self.time = self.time + 1 / self.frequency
-            self.marker_balloon.pose.position.z = self.balloon_z_initial - (
-                0.5 * self.accel_g * self.time**2)
-            if self.marker_balloon.pose.position.z <= 0.0:
-                self.state = State.PLACE_BALLOON
+            if self.state == State.DROP_BALLOON:
+                self.time = self.time + 1 / self.frequency
+                self.marker_balloon.pose.position.z = self.balloon_z_initial - (
+                    0.5 * self.accel_g * self.time**2)
+                if self.marker_balloon.pose.position.z <= 0.0:
+                    self.state = State.PLACE_BALLOON
 
-        self.count += 1
+            self.count += 1
 
     def drop_callback(self, request, response):
         """
@@ -148,6 +153,26 @@ class Arena(Node):
             self.state = State.DROP_BALLOON
         else:
             print("Place balloon first!")
+        return response
+    
+    def place_callback(self, request, response):
+        """
+        Place balloon.
+
+        Keyword Arguments:
+        -----------------
+            request -- type geometry.msgs.Point
+            response -- type std_srvs.srv.Empty
+
+        """
+        self.balloon_place_initial = Point(x=request.balloon_x, y=request.balloon_y,
+                                            z=request.balloon_z)
+        self.marker_balloon.header.stamp = self.get_clock().now().to_msg()
+        self.marker_balloon.header.frame_id = "panda_link0"
+        self.marker_balloon.pose.position = self.balloon_place_initial
+        self.balloon_z_initial = self.balloon_place_initial.z
+        if self.state == State.START:
+            self.state = State.PLACE_BALLOON
         return response
 
 def main(args=None):
