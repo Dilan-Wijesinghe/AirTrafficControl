@@ -56,6 +56,7 @@ class State(Enum):
     """
 
     NOTSET = auto()
+    PLACE = auto()
     GO = auto()
     OBTAINED = auto()
 
@@ -86,6 +87,8 @@ class Mover(Node):
         self.origin.position = Point(x=0.0, y=0.0, z=0.0)
         self.box_position = Point()
         self.balloon_position = Point()
+        self.prev_balloon_z1 = None
+        self.prev_balloon_z2 = None
         self.state = State.NOTSET
         self.scene_state = State.NOTSET
         self.scene_result = PlanningScene()
@@ -132,9 +135,9 @@ class Mover(Node):
         self.max_vel_scale = 0.3
         self.velocity = 2 # m/s
         self.traj_time = 0.0
-        self.joint_tolerance = self.max_vel_scale/10 * 0.0001 # 0.0001 is the default tolerance
+        self.joint_tolerance = self.max_vel_scale*10 * 0.0001 # 0.0001 is the default tolerance
         # defining orientation constraint so that the ee is "facing upwards"
-        self.orient_constraint = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
+        self.orient_constraint = Quaternion()
 
         # balloon parameters
         self.first = True # used for initial starting position of balloon
@@ -220,6 +223,8 @@ class Mover(Node):
         self.ik_pose.orientation.z = request.pose.orientation.z
         self.ik_pose.orientation.w = request.pose.orientation.w
 
+        self.orient_constraint = request.pose.orientation
+
         if self.robot_state == State.NOTSET:
             self.robot_state = State.GO
 
@@ -257,7 +262,7 @@ class Mover(Node):
         Returns: None
         """
 
-        print(self.curr_pos)
+        # print(self.robot_state)
         # The following IF is IK for (user) START CONFIG.
         if self.set_start_state == State.GO:
             # filling in IK request msg
@@ -339,8 +344,10 @@ class Mover(Node):
             except TransformException as ex:
                 self.get_logger().info(f'Could not transform : {ex}')
 
+        if self.robot_state == State.PLACE:
+            self.is_falling()
 
-        if self.balloon_position != Point():
+        if self.first == False:
             self.ik_pose.position = self.balloon_position
             self.ik_pose.position.z = self.curr_pos[2]
             self.robot_state = State.GO
@@ -638,8 +645,8 @@ class Mover(Node):
         Returns: None
         """
         self.get_logger().info("Trajectory execution done")
-        self.first = False
-        self.robot_state = State.NOTSET     # sub to joint_states, get the curr pos, and update it
+        self.robot_state = State.NOTSET
+        # self.robot_state = State.PLACE     # sub to joint_states, get the curr pos, and update it
 
     def wait_callback(self, request, response):
         """
@@ -679,7 +686,34 @@ class Mover(Node):
         """
         balloon_marker = msg
         self.balloon_position = balloon_marker.pose.position
+        # self.first = False
         return
+
+    def is_falling(self):
+        """
+        Determine if the brick is falling.
+
+        Call if the brick has been published. If yes, check if the brick is falling.
+        Brick is falling if it's z-height off the ground changes for two CONSECUTIVE frames.
+        If brick is falling, change the state to BRICK_FALLING. Otherwise, reset the previous two
+        frames.
+        """
+        if self.prev_balloon_z1 is None:
+            self.prev_balloon_z1 = self.balloon_position.z
+        else:
+            if (self.prev_balloon_z1 - self.balloon_position.z) > 0.0:
+                if self.prev_balloon_z2 is None:
+                    self.prev_balloon_z2 = self.balloon_position.z
+                else:
+                    if (self.prev_balloon_z2 - self.balloon_position.z) > 0.0:
+                        print('balloon falling!')
+                        self.robot_state = State.GO
+                    else:
+                        self.prev_balloon_z1 = self.balloon_position.z
+                        self.prev_balloon_z2 = None
+            else:
+                self.prev_balloon_z1 = self.balloon_position.z
+                self.prev_balloon_z2 = None
 
 
 def main(args=None):

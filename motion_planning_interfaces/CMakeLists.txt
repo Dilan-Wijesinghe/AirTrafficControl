@@ -17,6 +17,7 @@ find_package(geometry_msgs REQUIRED)
 rosidl_generate_interfaces(motion_planning_interfaces
 "srv/GetPose.srv"
 "srv/MultiplePose.srv"
+"srv/Place.srv"
 DEPENDENCIES std_msgs geometry_msgs
 )
 
