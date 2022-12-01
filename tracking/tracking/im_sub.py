@@ -82,13 +82,13 @@ def count_cameras():
             temp_camera.release()
             continue
         return i
+
     
 
 class State(Enum):
     """
     Current state of the robot.
     """
-
     NOTPUB = auto()
     PUB = auto()
 
@@ -392,7 +392,16 @@ class ImageSubscriber(Node):
         fgmask = noiseless_mask
         noiseless_curr_frame = cv.fastNlMeansDenoisingColored(curr_frame ,None,20,20,7,21) 
         return noiseless_curr_frame
-
+    
+    def kf_predict(self, cx, cy, cz):
+        """
+        Function estimates the positon of the object
+        """
+        meas = np.array([[np.float32(cx)], [np.float32(cy)], [np.float32(cz)]])
+        self.kf.correct(meas)
+        pred = self.kf.predict()
+        x, y, z = int(pred[0]), int(pred[1]), int(pred[2])
+        return x, y, z
 
 def main(args=None):
     rclpy.init(args=args)

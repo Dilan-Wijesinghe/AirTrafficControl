@@ -7,8 +7,30 @@ from geometry_msgs.msg import Point, Pose
 from enum import Enum, auto
 from rclpy.node import Node
 import matplotlib.pyplot as plt  
+import cv2 as cv
 # from motion_planning_interfaces.srv import GetPose
+class KF:
+    def __init__(self):
+        self.kf = cv.KalmanFilter(6,3,0)
+        self.kf.measurementMatrix = np.array([[1,0,0,0,0,0],
+                                              [0,1,0,0,0,0],
+                                              [0,0,1,0,0,0]],np.float32)
 
+        self.kf.transitionMatrix = np.array([[1,0,0,1,0,0],
+                                             [0,1,0,0,1,0],
+                                             [0,0,1,0,0,1],
+                                             [0,0,0,1,0,0],
+                                             [0,0,0,0,1,0],
+                                             [0,0,0,0,0,1]],np.float32)
+
+    def kf_predict(self, coordX, coordY,coordZ):
+        ''' This function estimates the position of the object'''
+        # print("Coords", coordX, coordY, coordZ)
+        measured = np.array([[np.float32(coordX)], [np.float32(coordY)],[np.float32(coordZ)]])
+        self.kf.correct(measured)
+        predicted = self.kf.predict()
+        x, y ,z = predicted[0], predicted[1], predicted[2]
+        return x, y, z
 
 class State(Enum):
     """
@@ -36,6 +58,8 @@ class hit(Node):
         self.state = State.NOTSET
         self.balloon_pos = Point()
         self.move_to = Pose()
+
+        self.kf = KF()
 
     def balloon_callback(self, msg):
         self.balloon_pos.x = msg.x
@@ -66,9 +90,10 @@ class hit(Node):
             v_robot = v_robot[0:3]
             
             b_pos = v_robot
-            self.balloon_pos_z.append(b_pos[2][0])
+            
             self.balloon_pos_x.append(b_pos[0][0])
             self.balloon_pos_y.append(b_pos[1][0])
+            self.balloon_pos_z.append(b_pos[2][0])
         
         elif self.state == State.NOTSET:
             self.state = State.GO
@@ -78,67 +103,91 @@ class hit(Node):
             y = np.array(self.balloon_pos_y)
             z = np.array(self.balloon_pos_z)
 
-            # # calculate COM for all the points
-            # comx = np.sum(np.array(self.balloon_pos_x))/len(self.balloon_pos_x)
-            # comy = np.sum(np.array(self.balloon_pos_y))/len(self.balloon_pos_x)
-            # comz = np.sum(np.array(self.balloon_pos_z))/len(self.balloon_pos_x)
+            a = []; b = []; c = []
+            print("Shape is:", len(self.balloon_pos_x))
+            for i in range(len(self.balloon_pos_x)):
+                pt_x = self.balloon_pos_x[i]
+                pt_y = self.balloon_pos_y[i]
+                pt_z = self.balloon_pos_z[i]
+                # print(pt_x, pt_y, pt_z)
+                points = self.kf.kf_predict(pt_x, pt_y, pt_z)
+            print(points)
+            # print("Points:", points[0], points[1], points[2])
+            for i in range(200):
+                pred = self.kf.kf_predict(points[0], points[1], points[2])
+                # print(pred)
+                a.append(pred[0][0])
+                b.append(pred[1][0])
+                c.append(pred[2][0])
+                # print(pred[0][0])
 
-            # # calculate the distance between points and COM
-            # dist_x = np.array(self.balloon_pos_x) - comx
-            # dist_y = np.array(self.balloon_pos_y) - comy
-            # dist_z = np.array(self.balloon_pos_z) - comz
-            # total_dist = np.sqrt(np.power(dist_x, 2) + np.power(dist_y, 2) + np.power(dist_z, 2))
 
-            # x = x[total_dist < 0.2]
-            # y = y[total_dist < 0.2]
-            # z = z[total_dist < 0.2]
 
-            # fit a line in x-y plane
-            def xz_line(x, k, b):
-                return k*x + b
+            # # # calculate COM for all the points
+            # # comx = np.sum(np.array(self.balloon_pos_x))/len(self.balloon_pos_x)
+            # # comy = np.sum(np.array(self.balloon_pos_y))/len(self.balloon_pos_x)
+            # # comz = np.sum(np.array(self.balloon_pos_z))/len(self.balloon_pos_x)
 
-            xz_param, _ = curve_fit(xz_line, x, y)
+            # # # calculate the distance between points and COM
+            # # dist_x = np.array(self.balloon_pos_x) - comx
+            # # dist_y = np.array(self.balloon_pos_y) - comy
+            # # dist_z = np.array(self.balloon_pos_z) - comz
+            # # total_dist = np.sqrt(np.power(dist_x, 2) + np.power(dist_y, 2) + np.power(dist_z, 2))
 
-            # fit a parabola in y-z plane
-            def yz_parabola(y, a, b, c):
-                return a*y**2 + b*y + c
+            # # x = x[total_dist < 0.2]
+            # # y = y[total_dist < 0.2]
+            # # z = z[total_dist < 0.2]
 
-            parabola_param, _ = curve_fit(yz_parabola, y, z)
+            # # fit a line in x-y plane
+            # def xz_line(x, k, b):
+            #     return k*x + b
 
-            # When the balloon is within certain distance
-            # position the robot for finer hit pose
-            # give a default z coordinate
-            pred_z = 0.2
-            parabola_a = parabola_param[0]
-            parabola_b = parabola_param[1]
-            parabola_c = parabola_param[2] - pred_z
+            # xz_param, _ = curve_fit(xz_line, x, y)
 
-            del_eqn = math.sqrt(parabola_b**2 - 4*parabola_a*parabola_c)
-            y1 = (-parabola_b + del_eqn)/(2*parabola_a)
-            y2 = (-parabola_b - del_eqn)/(2*parabola_a)
+            # # fit a parabola in y-z plane
+            # def yz_parabola(y, a, b, c):
+            #     return a*y**2 + b*y + c
 
-            line_k = xy_param[0]
-            line_b = xy_param[1]
-            x1 = (y1 - line_b)/line_k
-            x2 = (y2 - line_b)/line_k
+            # parabola_param, _ = curve_fit(yz_parabola, y, z)
 
-            # TODO: choose the x y that's further from the 
-            # initial position of the balloon
-            init_x = 0
-            init_y = 0
-            dist_1 = math.sqrt((x1-init_x)**2 + (y1-init_y)**2)
-            dist_2 = math.sqrt((x2-init_x)**2 + (y2-init_y)**2)
-            if dist_1 < dist_2:
-                pred_x = x
-                pred_y = y1
-            else:
-                pred_x = x
-                pred_y = y2
+            # # When the balloon is within certain distance
+            # # position the robot for finer hit pose
+            # # give a default z coordinate
+            # pred_z = 0.2
+            # parabola_a = parabola_param[0]
+            # parabola_b = parabola_param[1]
+            # parabola_c = parabola_param[2] - pred_z
+
+            # del_eqn = math.sqrt(parabola_b**2 - 4*parabola_a*parabola_c)
+            # y1 = (-parabola_b + del_eqn)/(2*parabola_a)
+            # y2 = (-parabola_b - del_eqn)/(2*parabola_a)
+
+            # line_k = xy_param[0]
+            # line_b = xy_param[1]
+            # x1 = (y1 - line_b)/line_k
+            # x2 = (y2 - line_b)/line_k
+
+            # # TODO: choose the x y that's further from the 
+            # # initial position of the balloon
+            # init_x = 0
+            # init_y = 0
+            # dist_1 = math.sqrt((x1-init_x)**2 + (y1-init_y)**2)
+            # dist_2 = math.sqrt((x2-init_x)**2 + (y2-init_y)**2)
+            # if dist_1 < dist_2:
+            #     pred_x = x
+            #     pred_y = y1
+            # else:
+            #     pred_x = x
+            #     pred_y = y2
 
             # move the ee to this position
-            self.move_to.position.x = pred_x
-            self.move_to.position.y = pred_y
-            self.move_to.position.z = pred_z
+            # self.move_to.position.x = pred_x
+            # self.move_to.position.y = pred_y
+            # self.move_to.position.z = pred_z
+            # print(pred[0][0])
+            self.move_to.position.x = float(pred[0][0])
+            self.move_to.position.y = float(pred[1][0])
+            self.move_to.position.z = float(pred[2][0])
 
             # face the end effector upward
             rot_ang = 0.0
@@ -164,7 +213,7 @@ class hit(Node):
             ax = plt.axes(projection='3d')
             ax.plot(x, y, z, 'xk')
             ax.plot(x[0], y[0], z[0], 'ob')
-            ax.plot(pred_x, pred_y, pred_z, 'xr')
+            ax.plot(pred[0], pred[1], pred[2], 'xr')
             ax.set_xlabel('x')
             ax.set_ylabel('y')
             ax.set_zlabel('z')
