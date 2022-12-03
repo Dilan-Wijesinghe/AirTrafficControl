@@ -1,5 +1,0 @@
-/**:
-  ros__parameters:
-    balloon_radius_y: 0.075
-    balloon_radius_x: 0.125
-    gravity: 3.5 # m/s^2
