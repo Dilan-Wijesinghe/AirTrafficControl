@@ -84,7 +84,7 @@ class hit(Node):
         #            out the z coordinate.
 
         # replace the following coordinates with actual tracking data
-        gathered_pts = 50
+        gathered_pts = 75
         if self.receive_state == State.PUB and len(self.balloon_pos_x) < gathered_pts:
             # transform from cam to robot base frame
             Trc = np.array([[1,0,0,1.11], 
