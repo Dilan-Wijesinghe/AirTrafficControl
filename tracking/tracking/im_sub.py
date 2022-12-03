@@ -141,7 +141,7 @@ class ImageSubscriber(Node):
         # varThreshold -> How sensitive to look at the foreground objects. 
         #              -> Low varThreshold is more sensitive, high is less
         # detectShadows-> Boolean determining whether to detect shadows
-        self.bgsub = cv.createBackgroundSubtractorMOG2(history = 500, varThreshold = 250, \
+        self.bgsub = cv.createBackgroundSubtractorMOG2(history = 500, varThreshold = 5, \
                                                        detectShadows = False)
         self.state = State.NOTPUB
         
@@ -177,7 +177,7 @@ class ImageSubscriber(Node):
             self.color_frame = cv.GaussianBlur(curr_frame, (5,5), 0)
             self.vid_pub.publish(self.bridge.cv2_to_imgmsg(self.color_frame)) # Publish msg 
 
-            self.remove_bg(clip_dist=2) # Remove background
+            self.remove_bg(clip_dist=3.1) # Remove background
             self.bg_sub(self.bg_removed) # Apply Background subtraction
 
             # Detect Contours
@@ -199,7 +199,7 @@ class ImageSubscriber(Node):
                 # --- Drawing Onto the Frames ---
                 ((x,y), r) = cv.minEnclosingCircle(MaxCont)
                 if self.intr:
-                    if r > 50:
+                    if r > 25:
                         self.state = State.PUB # Change ability to publish
                         print("Found An Object to Publish")
                         # --- Current Moment for Centroid Finding ---
@@ -233,7 +233,7 @@ class ImageSubscriber(Node):
 
             # Stack all three frames 
             stacked = np.vstack((fgmask_3, self.color_frame, real))
-            cv.imshow("Stacked", cv.resize(stacked, None, fx=0.40, fy=0.40))
+            cv.imshow("Stacked", cv.resize(stacked, None, fx=0.70, fy=0.70))
 
             # --- Get Real Coords ---
             if len(areas) != 0:

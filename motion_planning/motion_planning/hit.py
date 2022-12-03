@@ -11,21 +11,15 @@ import cv2 as cv
 # from motion_planning_interfaces.srv import GetPose
 class KF:
     def __init__(self):
-        self.kf = cv.KalmanFilter(6,3,0)
-        self.kf.measurementMatrix = np.array([[1,0,0,0,0,0],
-                                              [0,1,0,0,0,0],
-                                              [0,0,1,0,0,0]],np.float32)
+        self.kf = cv.KalmanFilter(3,3,0)
+        self.kf.measurementMatrix = np.array([[1,0,0],
+                                              [0,1,0],
+                                              [0,0,1]],np.float32)
 
-        self.kf.transitionMatrix = np.array([[1,0,0,1,0,0],
-                                             [0,1,0,0,1,0],
-                                             [0,0,1,0,0,1],
-                                             [0,0,0,1,0,0],
-                                             [0,0,0,0,1,0],
-                                             [0,0,0,0,0,1]],np.float32)
+        self.kf.transitionMatrix = np.eye(3, dtype=np.float32)
 
     def kf_predict(self, coordX, coordY,coordZ):
         ''' This function estimates the position of the object'''
-        # print("Coords", coordX, coordY, coordZ)
         measured = np.array([[np.float32(coordX)], [np.float32(coordY)],[np.float32(coordZ)]])
         self.kf.correct(measured)
         predicted = self.kf.predict()
@@ -40,6 +34,8 @@ class State(Enum):
     NOTSET = auto()
     GO = auto()
     STOP = auto()
+    NOTPUB = auto()
+    PUB = auto()
 
 
 class hit(Node):
@@ -49,22 +45,30 @@ class hit(Node):
 
         timer_period = 0.01
         self.timer = self.create_timer(timer_period, self.timer_callback)
-        self.balloon_pos = self.create_subscription(Point, 'balloon_coords', self.balloon_callback, 10)
+        self.balloonpos = self.create_subscription(Point, 'balloon_coords', self.balloon_callback, 10)
         self.ee_pos_pub = self.create_publisher(Pose, 'set_pose', 10)
 
         self.balloon_pos_x = []
         self.balloon_pos_y = []
         self.balloon_pos_z = []
         self.state = State.NOTSET
+        self.receive_state = State.NOTPUB
         self.balloon_pos = Point()
         self.move_to = Pose()
 
         self.kf = KF()
 
     def balloon_callback(self, msg):
-        self.balloon_pos.x = msg.x
-        self.balloon_pos.y = msg.y
-        self.balloon_pos.z = msg.z
+        if msg.x != 0 and msg.y !=0 and msg.z != 0:
+            self.balloon_pos.x = msg.x
+            self.balloon_pos.y = msg.y
+            self.balloon_pos.z = msg.z
+            
+            self.receive_state = State.PUB
+
+        else:
+            self.receive_state = State.NOTPUB
+        
 
 
     def timer_callback(self):
@@ -80,22 +84,31 @@ class hit(Node):
         #            out the z coordinate.
 
         # replace the following coordinates with actual tracking data
-        if len(self.balloon_pos_x) < 200:
+        gathered_pts = 50
+        if self.receive_state == State.PUB and len(self.balloon_pos_x) < gathered_pts:
             # transform from cam to robot base frame
-            Tcr = np.array([[1,0,0,-(0.92+0.56)], [0,-1,0,-0.03], [0,0,-1,-(1.85-0.09)], [0,0,0,1]])
-            v_cam = np.array([self.balloon_pos.x, self.balloon_pos.y, self.balloon_pos.z, 0]) # balloon pos in cam frame
-            v_robot = np.matmul(Tcr, v_cam.reshape((4,1))) # balloon pos in robot base frame
-            
+            Trc = np.array([[1,0,0,1.11], 
+                            [0,0,1,-1.7], 
+                            [0,-1,0,0.735], 
+                            [0,0,0,1]])
+            # Rrc = Trc[0:3, 0:3]
+            # prc = Trc[:, 3]
+            v_cam = np.array([self.balloon_pos.x, self.balloon_pos.y, self.balloon_pos.z, 1]) # balloon pos in cam frame
+            v_robot = Trc @ v_cam.reshape((4,1)) # balloon pos in robot base frame
+             
             # The points used for curve fit are already in the robot base frame
             v_robot = v_robot[0:3]
             
             b_pos = v_robot
+
+            print("balloon in robot frame: " + str(b_pos))
+            print("balloon in cam frame: " + str(v_cam))
             
             self.balloon_pos_x.append(b_pos[0][0])
             self.balloon_pos_y.append(b_pos[1][0])
             self.balloon_pos_z.append(b_pos[2][0])
         
-        elif self.state == State.NOTSET:
+        elif len(self.balloon_pos_x) >= gathered_pts and self.receive_state == State.PUB:
             self.state = State.GO
         
         if self.state == State.GO:
@@ -103,96 +116,28 @@ class hit(Node):
             y = np.array(self.balloon_pos_y)
             z = np.array(self.balloon_pos_z)
 
-            a = []; b = []; c = []
             print("Shape is:", len(self.balloon_pos_x))
             for i in range(len(self.balloon_pos_x)):
                 pt_x = self.balloon_pos_x[i]
                 pt_y = self.balloon_pos_y[i]
                 pt_z = self.balloon_pos_z[i]
-                # print(pt_x, pt_y, pt_z)
-                points = self.kf.kf_predict(pt_x, pt_y, pt_z)
-            print(points)
-            # print("Points:", points[0], points[1], points[2])
-            for i in range(200):
-                pred = self.kf.kf_predict(points[0], points[1], points[2])
-                # print(pred)
-                a.append(pred[0][0])
-                b.append(pred[1][0])
-                c.append(pred[2][0])
-                # print(pred[0][0])
+                predicted = self.kf.kf_predict(pt_x, pt_y, pt_z)
+            
+            for i in range(20):
+                predicted = self.kf.kf_predict(predicted[0], predicted[1], predicted[2] )
 
+            # [np.array[x], np.array[y], np.array[z]]
+            self.move_to.position.x = float(predicted[0][0])
+            self.move_to.position.y = float(predicted[1][0])
+            self.move_to.position.z = float(predicted[2][0])
 
-
-            # # # calculate COM for all the points
-            # # comx = np.sum(np.array(self.balloon_pos_x))/len(self.balloon_pos_x)
-            # # comy = np.sum(np.array(self.balloon_pos_y))/len(self.balloon_pos_x)
-            # # comz = np.sum(np.array(self.balloon_pos_z))/len(self.balloon_pos_x)
-
-            # # # calculate the distance between points and COM
-            # # dist_x = np.array(self.balloon_pos_x) - comx
-            # # dist_y = np.array(self.balloon_pos_y) - comy
-            # # dist_z = np.array(self.balloon_pos_z) - comz
-            # # total_dist = np.sqrt(np.power(dist_x, 2) + np.power(dist_y, 2) + np.power(dist_z, 2))
-
-            # # x = x[total_dist < 0.2]
-            # # y = y[total_dist < 0.2]
-            # # z = z[total_dist < 0.2]
-
-            # # fit a line in x-y plane
-            # def xz_line(x, k, b):
-            #     return k*x + b
-
-            # xz_param, _ = curve_fit(xz_line, x, y)
-
-            # # fit a parabola in y-z plane
-            # def yz_parabola(y, a, b, c):
-            #     return a*y**2 + b*y + c
-
-            # parabola_param, _ = curve_fit(yz_parabola, y, z)
-
-            # # When the balloon is within certain distance
-            # # position the robot for finer hit pose
-            # # give a default z coordinate
-            # pred_z = 0.2
-            # parabola_a = parabola_param[0]
-            # parabola_b = parabola_param[1]
-            # parabola_c = parabola_param[2] - pred_z
-
-            # del_eqn = math.sqrt(parabola_b**2 - 4*parabola_a*parabola_c)
-            # y1 = (-parabola_b + del_eqn)/(2*parabola_a)
-            # y2 = (-parabola_b - del_eqn)/(2*parabola_a)
-
-            # line_k = xy_param[0]
-            # line_b = xy_param[1]
-            # x1 = (y1 - line_b)/line_k
-            # x2 = (y2 - line_b)/line_k
-
-            # # TODO: choose the x y that's further from the 
-            # # initial position of the balloon
-            # init_x = 0
-            # init_y = 0
-            # dist_1 = math.sqrt((x1-init_x)**2 + (y1-init_y)**2)
-            # dist_2 = math.sqrt((x2-init_x)**2 + (y2-init_y)**2)
-            # if dist_1 < dist_2:
-            #     pred_x = x
-            #     pred_y = y1
-            # else:
-            #     pred_x = x
-            #     pred_y = y2
-
-            # move the ee to this position
-            # self.move_to.position.x = pred_x
-            # self.move_to.position.y = pred_y
-            # self.move_to.position.z = pred_z
-            # print(pred[0][0])
-            self.move_to.position.x = float(pred[0][0])
-            self.move_to.position.y = float(pred[1][0])
-            self.move_to.position.z = float(pred[2][0])
+            pred = predicted
+            print("predicted final point: " + str(pred))
 
             # face the end effector upward
-            rot_ang = 0.0
-            x_ang = np.pi/2
-            y_ang = np.pi/2
+            rot_ang = np.pi/2
+            x_ang = 0
+            y_ang = 0
             z_ang = 0.0
 
             qw = np.cos(rot_ang/2)
@@ -200,10 +145,17 @@ class hit(Node):
             qy = np.sin(rot_ang/2)*np.cos(y_ang)
             qz = np.sin(rot_ang/2)*np.cos(z_ang)
 
+            # self.move_to.orientation.w = qw
+            # self.move_to.orientation.x = qx
+            # self.move_to.orientation.y = qy
+            # self.move_to.orientation.z = qz
             self.move_to.orientation.w = qw
             self.move_to.orientation.x = qx
             self.move_to.orientation.y = qy
             self.move_to.orientation.z = qz
+
+            print("Move To" , self.move_to.position.x, self.move_to.position.y, \
+                              self.move_to.position.z)
 
             # publish this to Inverse Kinematics and move the arm
             self.ee_pos_pub.publish(self.move_to)
