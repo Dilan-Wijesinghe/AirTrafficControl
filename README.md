@@ -1,8 +1,6 @@
 # ME 495 Embedded Systems Final Project
 Authors: Ayush Gaggar, Dilan Wijesinghe, Muye Jia, Rintaroh Shima, Hanbing Wu
 
-`ros2 launch realsense2_camera rs_launch.py depth_module.profile:=1280x720x30 pointcloud.enable:=false`
-
 The `motion_planning` package will allow the user to input final end effector position and orientation,
 then plan the trajectory; the user can choose to inspect the scene after trajectory planning, and then
 execute the trajectory. Additionally, user can dynamically add box object to the scene at user-defined position.
@@ -24,14 +22,19 @@ The `motion_planning_interfaces` package defines service files that can be used 
 
 
 ## Adding a "balloon" into rviz
-1. Make sure that the franka robot is already running (see Quickstart #1) 
+1. Make sure that the Franka robot is already running (see Quickstart #1).
 
 2. Use the command `ros2 run motion_planning arena_node`. Note that the balloon's position is hardcoded (for the moment).
+
 3. Run `ros2 service call /balloon_drop std_srvs/srv/Empty` to drop the balloon.
+
 4. You need to kill the arena_node and rerun it to test again.
 
 ## Tracking balloon functionality
-1. Make sure franka is running, and arena is also running
-2. Use the command `ros2 run motion_planning balloon_move` to run the move_node with balloon tracking
+1. Make sure the Franka robot is running, and arena is also running.
+
+2. Use the command `ros2 run motion_planning balloon_move` to run the move_node with balloon tracking.
+
 3. Run `ros2 service call /balloon_drop std_srvs/srv/Empty` to drop the balloon.
-4. The terminal should print the balloon's position as it falls
+
+4. The terminal should print the balloon's position as it falls.
