@@ -6,6 +6,13 @@ uses Background Subtraction to find contours of a moving objects within the fram
 It then finds the centroid of these objects and calculates the real coordinates.
 Finally it publishes these coordinates to a `balloon_coords` topic. 
 
+Make sure that you are already running the Franka Rviz node - ros2 launch franka_moveit_config moveit.launch.py robot_ip:=dont-care use_fake_hardware:=true
+
+To run the balloon tracking - ros2 launch tracking tracking.launch.py
+
+To run simple move - ros2 run motion_planing simple_move
+
+To run hit - ros2 run motion_planning hit 
 
 ## Quickstart
 1. Use `ros2 launch realsense2_camera rs_launch.py 
