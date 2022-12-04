@@ -117,11 +117,16 @@ class hit(Node):
             z = np.array(self.balloon_pos_z)
 
             print("Shape is:", len(self.balloon_pos_x))
+            coords = [[], [], []]
             for i in range(len(self.balloon_pos_x)):
                 pt_x = self.balloon_pos_x[i]
                 pt_y = self.balloon_pos_y[i]
                 pt_z = self.balloon_pos_z[i]
-                predicted = self.kf.kf_predict(pt_x, pt_y, pt_z)
+                coords[0].append(pt_x)
+                coords[1].append(pt_y)
+                coords[2].append(pt_z)
+                # predicted = self.kf.kf_predict(pt_x, pt_y, pt_z)
+            predicted = self.kf.kf_predict(coords[0], coords[1], coords[2])
             
             # the for loop gives the trajectory prediction
             predx_list = []
@@ -159,7 +164,8 @@ class hit(Node):
 
             print("Move To" , self.move_to.position.x, self.move_to.position.y, \
                               self.move_to.position.z)
-
+            
+            print(predicted)
             # publish this to Inverse Kinematics and move the arm
             # self.ee_pos_pub.publish(self.move_to)
             # self.state = State.STOP
