@@ -7,12 +7,12 @@ scene at user-defined position.
 
 PUBLISHER:
     + /planning_scene (PlanningScene) - Publish planning scene
-    + /set_pose (motion_planning_interfaces/srv/GetPose) - Set the end effector position and
-                                                           orientation
-    + /set_pos (motion_planning_interfaces/srv/GetPose) - Set the end effector position
 
 SUBSCRIBER:
     + /joint_states (JointState) - Subscribe to the joint states of the robot
+    + /get_pose (motion_planning_interfaces/srv/GetPose) - Get the end effector position and
+                                                           orientation
+    + /get_pos (motion_planning_interfaces/srv/GetPose) - Get the end effector position
 
 SERVICES:
     + /set_box_position (motion_planning_interfaces/srv/GetPose) - Set box position in the
@@ -34,7 +34,7 @@ from moveit_msgs.msg import Constraints, JointConstraint, MotionPlanRequest, \
     WorkspaceParameters, RobotState, RobotTrajectory, PlanningOptions, PositionIKRequest, \
     PlanningScene, PlanningSceneWorld, CollisionObject, PlanningSceneComponents
 from sensor_msgs.msg import JointState
-from moveit_msgs.srv import GetPositionIK, GetPlanningScene
+from moveit_msgs.srv import GetPositionIK, GetPlanningScene, GetCartesianPath
 from trajectory_msgs.msg import JointTrajectory
 from shape_msgs.msg import SolidPrimitive
 from std_msgs.msg import Header
@@ -68,13 +68,13 @@ class Mover(Node):
         self.cbgroup = MutuallyExclusiveCallbackGroup()
         self.create_timer(timer_period, self.timer_callback)
 
-        # for execute_traj and IK
+        ########## Action clients for traj execution and IK #############
         self.send_pos = ActionClient(self, MoveGroup, 'move_action')
         self.execute_traj = ActionClient(self, ExecuteTrajectory, 'execute_trajectory')
         self.ik_client = self.create_client(GetPositionIK, 'compute_ik',
                                             callback_group=self.cbgroup)
 
-        # add box functionality
+        ########## Add box functionality ##############
         self.add_box_cli = self.create_client(GetPlanningScene, '/get_planning_scene',
                                               callback_group=self.cbgroup)
         self.box_pos = self.create_service(GetPose, '/set_box_position', self.set_box)
@@ -86,24 +86,33 @@ class Mover(Node):
         self.scene_state = State.NOTSET
         self.scene_result = PlanningScene()
 
-        # for planning trajectory
-        self.set_position = self.create_subscription(Pose, 'set_pos', self.set_position_callback,10)
+        ########## For planning trajectory #############
+        self.get_cartesian_waypoint = self.create_subscription(Pose, 'cartesian_waypoint', 
+                                                               self.cartesian_waypoint_callback)
+        self.get_cartesian_traj = self.create_client(GetCartesianPath, 'get_cartesian_traj', 
+                                                     callback_group=self.cbgroup)
+        self.get_position = self.create_subscription(Pose, 'set_pos', self.get_position_callback,10)
         self.set_ori = self.create_service(GetPose, 'set_orient', self.get_orient_callback)
-        self.set_pose = self.create_subscription(Pose, 'set_pose', self.set_pose_callback, 10)
-        self.wait_before_execute_service = self.create_service(
-            Bool, "wait_before_execute", self.wait_callback)
+        self.get_pose = self.create_subscription(Pose, 'set_pose', self.get_pose_callback, 10)
+        self.wait_before_execute_service = self.create_service(Bool, "wait_before_execute", 
+                                                               self.wait_callback)
         self.tf_buffer = Buffer() # TF buffer for our listener
         self.tf_listener = TransformListener(self.tf_buffer, self) # TL to get ee pos
         self.joint_state_sub = self.create_subscription(JointState, "joint_states",
                                                         self.js_callback, 10)
-        self.set_start = self.create_service(GetPose, '/set_start', self.set_start_callback)
+        self.set_start = self.create_subscription(Pose, '/set_start', self.set_start_callback)
 
+
+        ########## State variables for control #############
         self.curr_pos = None
         self.execute_immediately = True
-
         self.robot_state = State.NOTSET
         self.set_start_state = State.NOTSET
         self.user_start_config = False
+        self.cartesian = State.NOTSET
+        self.send_cart_goal = State.NOTSET
+        
+        ########## Useful variables ################
         # initial starting joint_states, UNLESS user has specified a start configuration
         self.start_js = [0.0,
                          -0.7853981633974483,
@@ -116,6 +125,9 @@ class Mover(Node):
                          0.035,
                          ]
         self.start_config = Pose()
+        self.cartesian_waypoint = []
+        self.cart_start = Pose()
+        self.cart_traj = RobotTrajectory()
         self.final_js = []
         self.planned_trajectory = RobotTrajectory()
         self.traj_for_later = RobotTrajectory()
@@ -124,16 +136,30 @@ class Mover(Node):
         self.ik_pose = Pose()
         self.ik_soln = RobotState()
 
-    def set_start_callback(self, request, response):
+    def cartesian_waypoint_callback(self, waypoint):
+        """
+        Get waypoint(s) for cartesian path.
+
+        Args: waypoints (Pose): Waypoints for desired cartesian path.
+
+        Returns: None
+        """
+        self.get_logger().info("Cartesian waypoints Get!")
+        if waypoint not in self.cartesian_waypoint:
+            self.cartesian_waypoint.append(waypoint)
+
+        if self.cartesian == State.NOTSET:
+            self.cartesian = State.GO
+
+    def set_start_callback(self, request):
         """
         Get the start position and change state.
 
         Args: request (GetPoseRequest): Position and orientation of the end effector
-              response (GetPoseResponse): the response object
 
-        Returns: A GetPoseResponse
+        Returns: None
         """
-        self.get_logger().info("Starting Set Start")
+        self.get_logger().info("Set starting pose!")
         if self.set_start_state == State.NOTSET:
             self.start_config.position.x = request.pose.position.x
             self.start_config.position.y = request.pose.position.y
@@ -146,8 +172,6 @@ class Mover(Node):
             self.set_start_state = State.GO
             self.user_start_config = True
             self.execute_immediately = False
-
-        return response
 
     def set_box(self, request, response):
         """
@@ -168,7 +192,7 @@ class Mover(Node):
 
         return response
 
-    def set_position_callback(self, request, response):
+    def get_position_callback(self, request):
         """
         Get the position.
 
@@ -184,8 +208,6 @@ class Mover(Node):
 
         if self.robot_state == State.NOTSET:
             self.robot_state = State.GO
-
-        return response
 
     def get_orient_callback(self, request, response):
         """
@@ -210,16 +232,15 @@ class Mover(Node):
 
         return response
 
-    def set_pose_callback(self, request):
+    def get_pose_callback(self, request):
         """
         Get the position and orientation of the end effector.
 
         Args: request (GetPoseRequest): Position and orientation of the box
-              response (GetPoseResponse): the response object
 
-        Returns: A GetPoseResponse
+        Returns: None
         """
-        self.get_logger().info("Pose Got")
+        self.get_logger().info("Pose received!")
         self.ik_pose.position.x = request.position.x
         self.ik_pose.position.y = request.position.y
         self.ik_pose.position.z = request.position.z
@@ -240,7 +261,7 @@ class Mover(Node):
         Returns: None
         """
 
-        # The following IF is IK for (user) START CONFIG.
+        ################# Obtain joint states for START Pose ####################
         if self.set_start_state == State.GO:
             # filling in IK request msg
             self.ik_states.group_name = "panda_arm"
@@ -258,13 +279,16 @@ class Mover(Node):
             await ik_future
 
             if ik_future.done() and self.set_start_state != State.OBTAINED:
-                # the service returns RobotState object
-                self.start_js = ik_future.result().solution.joint_state.position
-                self.robot_state = State.OBTAINED
-                self.send_goal()
-                # self.set_start_state = State.OBTAINED
+                if ik_future.result().error_code.val < -1:
+                    self.get_logger().info(f'The start pose is unexecutable')
+                    self.robot_state = State.NOTSET
+                else:
+                    # the service returns RobotState object
+                    self.start_js = ik_future.result().solution.joint_state.position
+                    self.robot_state = State.NOTSET
+                    self.set_start_state = State.NOTSET
         
-        # for add box
+        ################ Add Box to the scene #######################
         if self.state == State.GO:
             plan_component = PlanningSceneComponents()
             get_scene_future = self.add_box_cli.call_async(
@@ -321,7 +345,7 @@ class Mover(Node):
             except TransformException as ex:
                 self.get_logger().info(f'Could not transform : {ex}')
 
-        # The following is IK for FINAL joint state.
+        ################# Obtain FINAL joint state for target Pose #################
         if self.robot_state == State.GO:
             # filling in IK request msg
             self.ik_states.group_name = "panda_arm"
@@ -336,18 +360,105 @@ class Mover(Node):
             await ik_future
 
             if ik_future.done() and self.robot_state != State.OBTAINED:
-                # self.get_logger().info(f'{ik_future.result()}')
                 if ik_future.result().error_code.val < -1:
                     self.get_logger().info(f'The planned trajectory is unexecutable')
                     self.robot_state = State.NOTSET
                 else:
                     self.final_js = ik_future.result().solution.joint_state.position
-                    self.robot_state = State.OBTAINED
+                    self.robot_state = State.NOTSET
                     self.send_goal()
+
+        ################# Obtain FINAL joint state for Cartesian Waypoint(s) #################
+        if self.cartesian == State.GO:
+            # filling in IK request msg
+            self.ik_states.group_name = "panda_arm"
+
+            # PoseStamped msg
+            self.ik_robot_states.pose = self.cartesian_waypoint
+
+            # filling in robot state field in IK request
+            self.ik_states.pose_stamped = self.ik_robot_states
+
+            ik_future = self.ik_client.call_async(GetPositionIK.Request(ik_request=self.ik_states))
+            await ik_future
+
+            if ik_future.done() and self.robot_state != State.OBTAINED:
+                if ik_future.result().error_code.val < -1:
+                    self.get_logger().info(f'The cartesian trajectory is unexecutable')
+                    self.robot_state = State.NOTSET
+                else:
+                    self.final_js = ik_future.result().solution.joint_state.position
+                    self.robot_state = State.OBTAINED
+                    self.cartesian = State.NOTSET
+                    self.send_cart_goal = State.GO
+
+        ################# Obtain Cartesian Trajectory #################
+        if self.send_cart_goal == State.GO:
+            info_list = self.send_cartesian_goal()
+            cart_future = self.get_cartesian_traj.call_async(GetCartesianPath.Request(header=info_list[0], \
+                                                                                      start_state=info_list[1], \
+                                                                                      group_name=info_list[2], \
+                                                                                      link_name=info_list[3], \
+                                                                                      waypoints=info_list[4], \
+                                                                                      max_step=info_list[5]))
+            
+            if cart_future.done():
+                if cart_future.result().error_code.val < -1:
+                    self.get_logger().info(f'Cannot get cartesian path')
+                    self.send_cart_goal = State.NOTSET
+                else:
+                    self.cart_traj = ik_future.result().solution
+                    self.planned_trajectory = self.cart_traj
+                    self.exe_trajectory()
+                    self.get_logger().info(f'Start executing Cartesian Path!')
+
+    def send_cartesian_goal(self):
+        """
+        Send the request msg to obtain Cartesian trajectory.
+
+        Args: None
+
+        Returns: List of info.
+        """
+        time = self.get_clock().now().to_msg()
+        header_msg = Header()
+        header_msg.stamp = time
+        header_msg.frame_id = 'panda_link0'
+
+        # start of cartesian path
+        cart_rob_state = RobotState()
+        cart_start_js = JointState()
+        js_name = [
+            'panda_joint1',
+            'panda_joint2',
+            'panda_joint3',
+            'panda_joint4',
+            'panda_joint5',
+            'panda_joint6',
+            'panda_joint7',
+            'panda_finger_joint1',
+            'panda_finger_joint2'
+        ]
+        cart_start_js.name = js_name
+        cart_start_js.position = self.start_js
+        cart_rob_state.joint_state = cart_start_js
+        
+        group_name = "panda_arm"
+
+        # link for which cartesian path is computed
+        link_name = 'panda_joint7'
+
+        # waypoints list
+        way_pts = self.cartesian_waypoint
+
+        max_step = 0.1
+        info_list = [header_msg, cart_rob_state, group_name, link_name, way_pts, max_step]
+
+        return info_list
 
     def send_goal(self):
         """
-        Send the goal position to the robot.
+        Send the request msg to obtain non-cartesian trajectory.
 
         Args: None
 
@@ -575,7 +686,7 @@ class Mover(Node):
         Returns: None
         """
         self.get_logger().info("Trajectory execution done")
-        self.robot_state = State.NOTSET     # sub to joint_states, get the curr pos, and update it
+        self.robot_state = State.NOTSET
 
     def wait_callback(self, request, response):
         """
