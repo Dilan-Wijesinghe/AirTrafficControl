@@ -84,15 +84,15 @@ class hit(Node):
         #            out the z coordinate.
 
         # replace the following coordinates with actual tracking data
-        gathered_pts = 100
+        gathered_pts = 30
+        predict_num = 40
+
         if self.receive_state == State.PUB and len(self.balloon_pos_x) < gathered_pts:
             # transform from cam to robot base frame
             Trc = np.array([[1,0,0,1.11], 
                             [0,0,1,-1.7], 
                             [0,-1,0,0.735], 
                             [0,0,0,1]])
-            # Rrc = Trc[0:3, 0:3]
-            # prc = Trc[:, 3]
             v_cam = np.array([self.balloon_pos.x, self.balloon_pos.y, self.balloon_pos.z, 1]) # balloon pos in cam frame
             v_robot = Trc @ v_cam.reshape((4,1)) # balloon pos in robot base frame
              
@@ -123,16 +123,23 @@ class hit(Node):
                 pt_z = self.balloon_pos_z[i]
                 predicted = self.kf.kf_predict(pt_x, pt_y, pt_z)
             
-            for i in range(20):
+            # the for loop gives the trajectory prediction
+            predx_list = []
+            predy_list = []
+            predz_list = []
+            for i in range(predict_num):
                 predicted = self.kf.kf_predict(predicted[0], predicted[1], predicted[2] )
+                predx_list.append(float(predicted[0]))
+                predy_list.append(float(predicted[1]))
+                predz_list.append(float(predicted[2]))
+            
+            # print(predx_list)
 
-            # [np.array[x], np.array[y], np.array[z]]
             self.move_to.position.x = float(predicted[0][0])
             self.move_to.position.y = float(predicted[1][0])
             self.move_to.position.z = float(predicted[2][0])
 
-            pred = predicted
-            print("predicted final point: " + str(pred))
+            #print("predicted final point: " + str(pred))
 
             # face the end effector upward
             rot_ang = np.pi/2
@@ -145,10 +152,6 @@ class hit(Node):
             qy = np.sin(rot_ang/2)*np.cos(y_ang)
             qz = np.sin(rot_ang/2)*np.cos(z_ang)
 
-            # self.move_to.orientation.w = qw
-            # self.move_to.orientation.x = qx
-            # self.move_to.orientation.y = qy
-            # self.move_to.orientation.z = qz
             self.move_to.orientation.w = qw
             self.move_to.orientation.x = qx
             self.move_to.orientation.y = qy
@@ -158,14 +161,14 @@ class hit(Node):
                               self.move_to.position.z)
 
             # publish this to Inverse Kinematics and move the arm
-            self.ee_pos_pub.publish(self.move_to)
-            self.state = State.STOP
+            # self.ee_pos_pub.publish(self.move_to)
+            # self.state = State.STOP
 
             fig = plt.figure()
             ax = plt.axes(projection='3d')
             ax.plot(x, y, z, 'xk')
             ax.plot(x[0], y[0], z[0], 'ob')
-            ax.plot(pred[0], pred[1], pred[2], 'xr')
+            ax.plot(predx_list, predy_list, predz_list, 'xr')
             ax.set_xlabel('x')
             ax.set_ylabel('y')
             ax.set_zlabel('z')
