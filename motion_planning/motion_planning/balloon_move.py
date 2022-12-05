@@ -82,7 +82,8 @@ class Mover(Node):
                                               callback_group=self.cbgroup)
         self.box_pos = self.create_service(GetPose, '/set_box_position', self.set_box)
         self.scene_pub = self.create_publisher(PlanningScene, '/planning_scene', 1)
-        self.balloon_sub = self.create_subscription(Marker, '/balloon_marker', self.balloon_callback, 10)
+        # self.balloon_sub = self.create_subscription(Marker, '/balloon_marker', self.balloon_callback, 10)
+        self.balloon_sub = self.create_subscription(Marker, '/balloon_coords', self.balloon_callback, 10)
         self.origin = Pose()
         self.origin.position = Point(x=0.0, y=0.0, z=0.0)
         self.box_position = Point()
@@ -107,6 +108,8 @@ class Mover(Node):
 
         self.curr_pos = None
         self.execute_immediately = True
+        self.tf_base_arm = None
+        self.curr_joint_pos = None
 
         self.robot_state = State.NOTSET
         self.set_start_state = State.NOTSET
@@ -140,7 +143,7 @@ class Mover(Node):
         self.orient_constraint = Quaternion()
 
         # balloon parameters
-        self.first = True # used for initial starting position of balloon
+        self.first = False # used for initial starting position of balloon
 
     def set_start_callback(self, request, response):
         """
@@ -348,9 +351,10 @@ class Mover(Node):
             self.is_falling()
 
         if self.first == False:
-            self.ik_pose.position = self.balloon_position
-            self.ik_pose.position.z = self.curr_pos[2]
-            self.robot_state = State.GO
+            if self.tf_base_arm is not None:
+                self.ik_pose.position = self.balloon_position
+                self.ik_pose.position.z = self.curr_pos[2]
+                self.robot_state = State.GO
 
         # The following is IK for FINAL joint state.
         if self.robot_state == State.GO:
@@ -374,7 +378,7 @@ class Mover(Node):
                 'panda_finger_joint1',
                 'panda_finger_joint2'
             ]
-            js.position = self.curr_joint_pos
+            js.position = self.start_js
             self.ik_states.robot_state.joint_state = js
             
             cons = Constraints()
@@ -500,6 +504,8 @@ class Mover(Node):
         joint3.position = self.final_js[2]
         joint3.tolerance_below = self.joint_tolerance
         joint3.weight = 1.0
+        joint4 = JointConstraint()
+        joint4.joint_name = "panda_joint4"
         joint4.position = self.final_js[3]
         joint4.tolerance_above = self.joint_tolerance
         joint4.tolerance_below = self.joint_tolerance
@@ -680,7 +686,7 @@ class Mover(Node):
         Returns: None
         """
         balloon_marker = msg
-        self.balloon_position = balloon_marker.pose.position
+        self.balloon_position = balloon_marker
         # self.first = False
         return
 
