@@ -34,6 +34,8 @@ from tf2_ros import TransformBroadcaster
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
 from motion_planning_interfaces.srv import Place
+from rclpy.action import ActionServer
+from moveit_msgs.action import MoveGroup, ExecuteTrajectory
 
 
 class State(Enum):
@@ -175,10 +177,36 @@ class Arena(Node):
             self.state = State.PLACE_BALLOON
         return response
 
+class Intercept(Node):
+    def __init__(self):
+        super().__init__("intercept_node")
+        self.action_server = ActionServer(self, MoveGroup, "move_action", self.move_callback)
+        self.execute_traj = ActionServer(self, ExecuteTrajectory, 'execute_trajectory', self.exe_callback)
+        # self.action_server = ActionServer(self, MoveGroup, "move_action", self.move_callback)
+    
+    def move_callback(self, goal):
+        print('move')
+        self.get_logger().info(f"{goal.request}")
+        result = MoveGroup.Result()
+        return result
+    
+    def exe_callback(self, goal): 
+        print('exe')
+        self.get_logger().info(f"{goal.request}")
+        result = ExecuteTrajectory.Result()
+        return result
+
+def intercept_entry(args=None):
+    rclpy.init(args=None)
+    # node = Intercept()
+    node = Arena()
+    rclpy.spin(node)
+    rclpy.shutdown()
+
 def main(args=None):
     """Create an arena node and spin."""
     rclpy.init(args=args)
-    node = Arena()
+    node = Intercept()
     rclpy.spin(node)
     rclpy.shutdown()
 
