@@ -90,7 +90,7 @@ class Mover(Node):
         ########## For planning trajectory #############
         self.get_cartesian_waypoint = self.create_subscription(Pose, 'cartesian_waypoint', 
                                                                self.cartesian_waypoint_callback, 10)
-        self.get_cartesian_traj = self.create_client(GetCartesianPath, 'get_cartesian_traj', 
+        self.get_cartesian_traj = self.create_client(GetCartesianPath, 'compute_cartesian_path', 
                                                      callback_group=self.cbgroup)
         self.get_position = self.create_subscription(Pose, 'set_pos', self.get_position_callback,10)
         self.set_ori = self.create_service(GetPose, 'set_orient', self.get_orient_callback)
@@ -380,21 +380,20 @@ class Mover(Node):
                                          link_name=info_list[3],
                                          waypoints=info_list[4],
                                          max_step=info_list[5],
-                                         jump_threshold=info_list[6]))
-                                        #  avoid_collisions=info_list[7],
-                                        #  path_constraints=info_list[8]))
+                                         jump_threshold=info_list[6],
+                                         avoid_collisions=info_list[7],
+                                         path_constraints=info_list[8]))
             print('waiting')
             await cart_future
-            # self.cartesian = State.NOTSET
-            print('hello')
+
             if cart_future.done():
-                print('world')
                 if cart_future.result().error_code.val < -1:
                     self.get_logger().info(f'Cannot get cartesian path')
                     self.send_cart_goal = State.NOTSET
                 else:
-                    self.cart_traj = ik_future.result().solution
+                    self.cart_traj = cart_future.result().solution
                     self.planned_trajectory = self.cart_traj
+                    self.cartesian = State.NOTSET
                     self.exe_trajectory()
                     self.get_logger().info(f'Start executing Cartesian Path!')
 
@@ -430,7 +429,7 @@ class Mover(Node):
         group_name = "panda_arm"
 
         # link for which cartesian path is computed
-        link_name = 'panda_joint7'
+        link_name = 'panda_hand_tcp'
 
         # waypoints list
         way_pts = self.cartesian_waypoint
@@ -453,7 +452,7 @@ class Mover(Node):
         orient_cons.weight = 1.0
         cons.orientation_constraints.append(orient_cons)
         
-        info_list = [header_msg, cart_rob_state, group_name, link_name, way_pts, max_step, jump_threshold] #, avoid_coll, cons] # , cons if want constraint
+        info_list = [header_msg, cart_rob_state, group_name, link_name, way_pts, max_step, jump_threshold, avoid_coll, cons] # , cons if want constraint
 
         return info_list
 
