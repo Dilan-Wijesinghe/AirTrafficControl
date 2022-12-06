@@ -177,7 +177,7 @@ class ImageSubscriber(Node):
             self.color_frame = cv.GaussianBlur(curr_frame, (11,11), 0)
             self.vid_pub.publish(self.bridge.cv2_to_imgmsg(self.color_frame)) # Publish msg 
 
-            self.remove_bg(clip_dist=1.5) # Remove background
+            self.remove_bg(clip_dist=3.0) # Remove background
 
             # --- Color Variations ---
             frame_HSV = cv.cvtColor(self.bg_removed, cv.COLOR_BGR2HSV)
@@ -214,7 +214,7 @@ class ImageSubscriber(Node):
                 # --- Drawing Onto the Frames ---
                 ((x,y), r) = cv.minEnclosingCircle(MaxCont)
                 if self.intr:
-                    if r > 50: # Change depending on size and distance from camera
+                    if r > 25: # Change depending on size and distance from camera
                         self.state = State.PUB # Change ability to publish
                         self.get_logger().info("Found An Object to Publish")
                         # --- Current Moment for Centroid Finding ---
@@ -247,7 +247,7 @@ class ImageSubscriber(Node):
             # Stack all three frames 
             stacked = np.vstack((fgmask_3, frame_thresh3, self.color_frame))
             # cv.imshow("Color Frame with Contours", cv.resize(self.color_frame, None, fx=0.40, fy=0.40))
-            cv.imshow("Stacked", cv.resize(stacked, None, fx=0.40, fy=0.40))
+            cv.imshow("Stacked", cv.resize(stacked, None, fx=0.50, fy=0.50))
 
             # --- Get Real Coords ---
             if len(areas) != 0:
