@@ -46,7 +46,7 @@ class hit(Node):
         timer_period = 0.01
         self.timer = self.create_timer(timer_period, self.timer_callback)
         self.balloonpos = self.create_subscription(Point, 'balloon_coords', self.balloon_callback, 10)
-        self.ee_pos_pub = self.create_publisher(Pose, 'set_pose', 10)
+        self.ee_pos_pub = self.create_publisher(Pose, 'cartesian_waypoint', 10)
 
         self.balloon_pos_x = []
         self.balloon_pos_y = []
@@ -167,7 +167,7 @@ class hit(Node):
             
             print(predicted)
             # publish this to Inverse Kinematics and move the arm
-            # self.ee_pos_pub.publish(self.move_to)
+            self.ee_pos_pub.publish(self.move_to)
             # self.state = State.STOP
 
             fig = plt.figure()
