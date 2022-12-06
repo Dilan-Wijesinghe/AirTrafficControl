@@ -32,13 +32,14 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from moveit_msgs.action import MoveGroup, ExecuteTrajectory
 from moveit_msgs.msg import Constraints, JointConstraint, MotionPlanRequest, \
     WorkspaceParameters, RobotState, RobotTrajectory, PlanningOptions, PositionIKRequest, \
-    PlanningScene, PlanningSceneWorld, CollisionObject, PlanningSceneComponents
+    PlanningScene, PlanningSceneWorld, CollisionObject, PlanningSceneComponents, \
+    OrientationConstraint
 from sensor_msgs.msg import JointState
 from moveit_msgs.srv import GetPositionIK, GetPlanningScene, GetCartesianPath
 from trajectory_msgs.msg import JointTrajectory
 from shape_msgs.msg import SolidPrimitive
 from std_msgs.msg import Header
-from geometry_msgs.msg import Vector3, PoseStamped, Pose, Point
+from geometry_msgs.msg import Vector3, PoseStamped, Pose, Point, Quaternion
 from tf2_ros.transform_listener import TransformListener
 from tf2_ros.buffer import Buffer
 from std_srvs.srv import SetBool as Bool
@@ -88,7 +89,7 @@ class Mover(Node):
 
         ########## For planning trajectory #############
         self.get_cartesian_waypoint = self.create_subscription(Pose, 'cartesian_waypoint', 
-                                                               self.cartesian_waypoint_callback)
+                                                               self.cartesian_waypoint_callback, 10)
         self.get_cartesian_traj = self.create_client(GetCartesianPath, 'get_cartesian_traj', 
                                                      callback_group=self.cbgroup)
         self.get_position = self.create_subscription(Pose, 'set_pos', self.get_position_callback,10)
@@ -100,7 +101,7 @@ class Mover(Node):
         self.tf_listener = TransformListener(self.tf_buffer, self) # TL to get ee pos
         self.joint_state_sub = self.create_subscription(JointState, "joint_states",
                                                         self.js_callback, 10)
-        self.set_start = self.create_subscription(Pose, '/set_start', self.set_start_callback)
+        self.set_start = self.create_subscription(Pose, '/set_start', self.set_start_callback, 10)
 
 
         ########## State variables for control #############
@@ -135,6 +136,7 @@ class Mover(Node):
         self.ik_robot_states = PoseStamped()
         self.ik_pose = Pose()
         self.ik_soln = RobotState()
+        self.orient_constraint = Quaternion(x=0., y=0., z=0., w=1.)
 
     def cartesian_waypoint_callback(self, waypoint):
         """
@@ -370,39 +372,23 @@ class Mover(Node):
 
         ################# Obtain FINAL joint state for Cartesian Waypoint(s) #################
         if self.cartesian == State.GO:
-            # filling in IK request msg
-            self.ik_states.group_name = "panda_arm"
-
-            # PoseStamped msg
-            self.ik_robot_states.pose = self.cartesian_waypoint
-
-            # filling in robot state field in IK request
-            self.ik_states.pose_stamped = self.ik_robot_states
-
-            ik_future = self.ik_client.call_async(GetPositionIK.Request(ik_request=self.ik_states))
-            await ik_future
-
-            if ik_future.done() and self.robot_state != State.OBTAINED:
-                if ik_future.result().error_code.val < -1:
-                    self.get_logger().info(f'The cartesian trajectory is unexecutable')
-                    self.robot_state = State.NOTSET
-                else:
-                    self.final_js = ik_future.result().solution.joint_state.position
-                    self.robot_state = State.OBTAINED
-                    self.cartesian = State.NOTSET
-                    self.send_cart_goal = State.GO
-
-        ################# Obtain Cartesian Trajectory #################
-        if self.send_cart_goal == State.GO:
             info_list = self.send_cartesian_goal()
-            cart_future = self.get_cartesian_traj.call_async(GetCartesianPath.Request(header=info_list[0], \
-                                                                                      start_state=info_list[1], \
-                                                                                      group_name=info_list[2], \
-                                                                                      link_name=info_list[3], \
-                                                                                      waypoints=info_list[4], \
-                                                                                      max_step=info_list[5]))
-            
+            cart_future = self.get_cartesian_traj.call_async(
+                GetCartesianPath.Request(header=info_list[0],
+                                         start_state=info_list[1],
+                                         group_name=info_list[2],
+                                         link_name=info_list[3],
+                                         waypoints=info_list[4],
+                                         max_step=info_list[5],
+                                         jump_threshold=info_list[6]))
+                                        #  avoid_collisions=info_list[7],
+                                        #  path_constraints=info_list[8]))
+            print('waiting')
+            await cart_future
+            # self.cartesian = State.NOTSET
+            print('hello')
             if cart_future.done():
+                print('world')
                 if cart_future.result().error_code.val < -1:
                     self.get_logger().info(f'Cannot get cartesian path')
                     self.send_cart_goal = State.NOTSET
@@ -420,15 +406,14 @@ class Mover(Node):
 
         Returns: List of info.
         """
-        time = self.get_clock().now().to_msg()
         header_msg = Header()
-        header_msg.stamp = time
+        header_msg.stamp = self.get_clock().now().to_msg()
         header_msg.frame_id = 'panda_link0'
 
         # start of cartesian path
         cart_rob_state = RobotState()
         cart_start_js = JointState()
-        js_name = [
+        cart_start_js.name = [
             'panda_joint1',
             'panda_joint2',
             'panda_joint3',
@@ -439,7 +424,6 @@ class Mover(Node):
             'panda_finger_joint1',
             'panda_finger_joint2'
         ]
-        cart_start_js.name = js_name
         cart_start_js.position = self.start_js
         cart_rob_state.joint_state = cart_start_js
         
@@ -452,7 +436,24 @@ class Mover(Node):
         way_pts = self.cartesian_waypoint
 
         max_step = 0.1
-        info_list = [header_msg, cart_rob_state, group_name, link_name, way_pts, max_step]
+        jump_threshold = 2.0
+        avoid_coll = True
+
+
+        cons = Constraints()
+        cons.name = 'stay_level'
+        orient_cons = OrientationConstraint()
+        orient_cons.header.stamp = self.get_clock().now().to_msg()
+        orient_cons.header.frame_id = 'panda_hand'
+        orient_cons.orientation = self.orient_constraint
+        orient_cons.link_name = 'panda_hand_tcp'
+        orient_cons.absolute_x_axis_tolerance = 0.01
+        orient_cons.absolute_y_axis_tolerance = 0.01
+        orient_cons.absolute_z_axis_tolerance = 0.01
+        orient_cons.weight = 1.0
+        cons.orientation_constraints.append(orient_cons)
+        
+        info_list = [header_msg, cart_rob_state, group_name, link_name, way_pts, max_step, jump_threshold] #, avoid_coll, cons] # , cons if want constraint
 
         return info_list
 
