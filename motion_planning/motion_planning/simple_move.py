@@ -857,6 +857,7 @@ class Mover(Node):
         self.ik_robot_states = PoseStamped()
         self.ik_pose = Pose()
         self.ik_soln = RobotState()
+        self.max_vel_scale = 0.3
         self.orient_constraint = Quaternion(x=0., y=0., z=0., w=1.)
 
     def set_start_callback(self, request, response):
@@ -1091,17 +1092,20 @@ class Mover(Node):
                                          waypoints=info_list[4],
                                          max_step=info_list[5],
                                          jump_threshold=info_list[6],
-                                         avoid_collisions=info_list[7],
-                                         path_constraints=info_list[8]))
+                                         avoid_collisions=info_list[7]))
+                                        #  path_constraints=info_list[8]))
             print('waiting')
             await cart_future
 
             if cart_future.done():
                 if cart_future.result().error_code.val < -1:
                     self.get_logger().info(f'Cannot get cartesian path')
+                    print('The number of waypoints executed were:')
+                    print(cart_future.result().fraction)
                     self.send_cart_goal = State.NOTSET
                 else:
                     self.cart_traj = cart_future.result().solution
+                    print(self.cart_traj)
                     self.planned_trajectory = self.cart_traj
                     self.cartesian = State.NOTSET
                     self.exe_trajectory()
@@ -1133,7 +1137,7 @@ class Mover(Node):
             'panda_finger_joint1',
             'panda_finger_joint2'
         ]
-        cart_start_js.position = self.start_js
+        cart_start_js.position = self.curr_joint_pos
         cart_rob_state.joint_state = cart_start_js
         
         group_name = "panda_arm"
@@ -1296,7 +1300,7 @@ class Mover(Node):
         goal_msg.group_name = 'panda_manipulator'
         goal_msg.num_planning_attempts = 10
         goal_msg.allowed_planning_time = 5.0
-        goal_msg.max_velocity_scaling_factor = 0.1
+        goal_msg.max_velocity_scaling_factor = self.max_vel_scale
         goal_msg.max_acceleration_scaling_factor = 0.1
         move_group_goal.request = goal_msg
 
