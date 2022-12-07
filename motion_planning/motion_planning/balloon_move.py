@@ -498,8 +498,12 @@ class Mover(Node):
         joint3 = JointConstraint()
         joint3.joint_name = "panda_joint3"
         joint3.position = self.final_js[2]
+        joint3.tolerance_above = self.joint_tolerance
         joint3.tolerance_below = self.joint_tolerance
         joint3.weight = 1.0
+
+        joint4 = JointConstraint()
+        joint4.joint_name = "panda_joint4"
         joint4.position = self.final_js[3]
         joint4.tolerance_above = self.joint_tolerance
         joint4.tolerance_below = self.joint_tolerance
