@@ -137,6 +137,7 @@ class Mover(Node):
         self.ik_pose = Pose()
         self.ik_soln = RobotState()
         self.max_vel_scale = 1.0
+        self.max_acc_scale = 1.0
         self.balloon_z = 0.12 # m from paddle to balloon
         self.orient_constraint = Quaternion(x=0., y=0., z=0., w=1.)
         self.joint_tolerance = 0.3 / 10.0 # We need to change this
@@ -420,11 +421,13 @@ class Mover(Node):
                     self.robot_state = State.NOTSET
                 else:
                     self.final_js = ik_future.result().solution.joint_state.position
-                    # self.robot_state = State.NOTSET
+                    self.robot_state = State.NOTSET
+                    self.get_logger().info("Sending Goal")
                     self.send_goal()
 
         ################# Obtain FINAL joint state for Cartesian Waypoint(s) #################
         if self.cartesian == State.GO:
+            self.get_logger().info("Doing Cartesian")
             info_list = self.send_cartesian_goal()
             cart_future = self.get_cartesian_traj.call_async(
                 GetCartesianPath.Request(header=info_list[0],
@@ -642,7 +645,7 @@ class Mover(Node):
         goal_msg.num_planning_attempts = 10
         goal_msg.allowed_planning_time = 5.0
         goal_msg.max_velocity_scaling_factor = self.max_vel_scale
-        goal_msg.max_acceleration_scaling_factor = 0.1
+        goal_msg.max_acceleration_scaling_factor = self.max_acc_scale
         move_group_goal.request = goal_msg
 
         # send the goal request
@@ -676,24 +679,24 @@ class Mover(Node):
 
         # execute the trajectory after getting the result, if self.execute_immediately is true
         if self.execute_immediately is True:
-            self.get_logger().info("Start executing trajectory")
+            self.get_logger().info("Start executing trajectory IMMEDIATELY")
             self.exe_trajectory()
             return
         else:
             self.robot_state = State.NOTSET
 
         # Only execute if robot user_start_config is not set
-        if not self.user_start_config:
-            # execute the trajectory after getting the result
-            self.planned_trajectory = result.planned_trajectory
-            self.get_logger().info("Start executing trajectory")
-            self.exe_trajectory()
-            return
+        # if not self.user_start_config:
+        #     # execute the trajectory after getting the result
+        #     self.planned_trajectory = result.planned_trajectory
+        #     self.get_logger().info("Start executing trajectory USER")
+        #     self.exe_trajectory()
+        #     return
 
         # Store the planned trajectory in text file.
-        else:
-            self.get_logger().info("Store the planned trajectory")
-            self.traj_for_later = result.planned_trajectory
+        # else:
+        #     self.get_logger().info("Store the planned trajectory")
+        #     self.traj_for_later = result.planned_trajectory
 
     def exe_trajectory(self):
         """
@@ -705,6 +708,12 @@ class Mover(Node):
         """
         trajectory = ExecuteTrajectory.Goal()
         trajectory.trajectory = self.planned_trajectory
+
+        # get joint trajectory from planned trajectory
+        # joint_pt_list = self.planned_trajectory.joint_trajectory.points
+        traj_duration = (self.planned_trajectory.joint_trajectory.points[-1].time_from_start)
+        self.traj_time = traj_duration.sec + traj_duration.nanosec * 10**(-9)
+        print(self.traj_time)
 
         # send the request
         self.execute_traj.wait_for_server()
@@ -721,7 +730,8 @@ class Mover(Node):
         Returns: None
         """
         self.get_logger().info("Trajectory execution done")
-        self.robot_state = State.NOTSET
+        self.robot_state = State.NOTSET     # sub to joint_states, get the curr pos, and update it
+        self.get_logger().info(f"Current State is {self.robot_state}")
 
     def wait_callback(self, request, response):
         """

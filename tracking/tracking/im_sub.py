@@ -141,7 +141,9 @@ class ImageSubscriber(Node):
         # varThreshold -> How sensitive to look at the foreground objects. 
         #              -> Low varThreshold is more sensitive, high is less
         # detectShadows-> Boolean determining whether to detect shadows
-        self.bgsub = cv.createBackgroundSubtractorMOG2(history = 1000, varThreshold = 5, \
+        self.hist = 1000
+        varThresh = 5
+        self.bgsub = cv.createBackgroundSubtractorMOG2(history =  self.hist, varThreshold = varThresh, \
                                                        detectShadows = False)
         self.state = State.NOTPUB
         
@@ -151,6 +153,8 @@ class ImageSubscriber(Node):
         self.depth_frame = None
         self.fgmask = None
         self.bg_removed = None
+        self.z_pts= np.zeros((self.hist, 1))
+        self.curr_pt = 0
 
     """ 
     TODO
@@ -191,8 +195,7 @@ class ImageSubscriber(Node):
             # Get Real Moving Object
             self.bg_sub(frame_thresh) # Apply Background subtraction
             # real = cv.bitwise_and(frame_HSV_not, frame_HSV_not, mask=self.fgmask)
-            # cv.imshow("Hi", frame_thresh)
-            #real = cv.bitwise_and(self.bg_removed, self.bg_removed, mask=self.fgmask)
+            # real = cv.bitwise_and(self.bg_removed, self.bg_removed, mask=self.fgmask)
             
             # cv.imshow(wind_name, frame_thresh)
 
@@ -216,7 +219,7 @@ class ImageSubscriber(Node):
                 if self.intr:
                     if r > 10: # Change depending on size and distance from camera
                         self.state = State.PUB # Change ability to publish
-                        self.get_logger().info("Found An Object to Publish")
+                        # self.get_logger().info("Found An Object to Publish")
                         # --- Current Moment for Centroid Finding ---
                         for cont in contours:
                             # if cv.contourArea(cont) > 1000:
@@ -233,7 +236,7 @@ class ImageSubscriber(Node):
                         # cv.rectangle(self.color_frame, (x,y), (x + w, y + h), (0, 0, 255), 2) # Draw rect over obj
                         cv.circle(self.color_frame, (int(x), int(y)), int(r), (0, 255, 255), 2)
                         cv.circle(self.color_frame, self.MaxCentroid, 10, (24,146,221), -1) # Thickness of -1 Fills in 
-                        cv.putText(self.color_frame, "Found Object", (x,y-10), cv.FONT_HERSHEY_SIMPLEX, 0.3, (0,255,0),1, cv.LINE_AA)
+                        # cv.putText(self.color_frame, "Found Object", (x,y-10), cv.FONT_HERSHEY_SIMPLEX, 0.3, (0,255,0),1, cv.LINE_AA)
                     else: # r < 50
                         self.state = State.NOTPUB # If it is too small, do not publish
             except:
@@ -247,7 +250,7 @@ class ImageSubscriber(Node):
             # Stack all three frames 
             stacked = np.vstack((fgmask_3, frame_thresh3, self.color_frame))
             # cv.imshow("Color Frame with Contours", cv.resize(self.color_frame, None, fx=0.40, fy=0.40))
-            cv.imshow("Stacked", cv.resize(stacked, None, fx=0.50, fy=0.50))
+            cv.imshow("Stacked", cv.resize(stacked, None, fx=0.35, fy=0.350))
 
             # --- Get Real Coords ---
             if len(areas) != 0:
@@ -262,6 +265,11 @@ class ImageSubscriber(Node):
                         self.coords.z = z_
 
                         if self.state == State.PUB:
+                            self.z_pts[self.curr_pt][0] = z_
+                            self.check_falling(z_)
+                            self.curr_pt += 1
+                            if self.curr_pt >= self.hist: # Reset if at the point limit
+                                self.curr_pt = 0
                             self.get_logger().info(f"Real Coords are: \
                                 {self.coords.x, self.coords.y, self.coords.z}")
                             self.coords_pub.publish(self.coords) # Publishing coords
@@ -278,6 +286,24 @@ class ImageSubscriber(Node):
             return
 
         cv.waitKey(1)
+    
+    def check_falling(self, z):
+        """
+        Checks if the balloon is falling
+        """
+        avg = 0
+        if self.curr_pt <= 5:
+            return
+        for i in range(1,5):
+            avg += self.z_pts[self.curr_pt - i]
+        avg = avg / 5.
+        self.get_logger().info(f"Avg {avg}")
+        # prev_pt = self.z_pts[self.curr_pt-1]
+        # self.get_logger().info(f"Prev Point: {prev_pt}")
+        dist = avg - z # Previous point minus current
+        if dist > 0.0:
+            self.get_logger().info(f"Balloon is falling {dist}")
+        return
      
     
     def depth_callback(self, depthInfo):
@@ -469,19 +495,10 @@ if __name__ == '__main__':
 # except:
 #     print("Contour not found")
 
-
-# --- Find Canny Edges ---
-# edged = cv.Canny(fgmask, 30, 200)
-# # edged = cv.Canny(curr_frame, 30, 200)
-# contours, hier = cv.findContours(edged, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
-# cv.imshow('Canny Edges', edged)
-
-# cv.drawContours(curr_frame, contours, -1, (0, 255, 0), 3)
-
-# --- Hough Circle ---
-# param1 - sensitivity
-# param2 - number of edgepoints
-# circles = cv.HoughCircles(curr_frame, cv.HOUGH_GRADIENT, 1, 1000,
+# # --- Hough Circle ---
+# # param1 - sensitivity
+# # param2 - number of edgepoints
+# circles = cv.HoughCircles(self.fgmask, cv.HOUGH_GRADIENT, 1, 1000,
 #                           param1=150, param2=60, minRadius=0, maxRadius=150)
 
 # if circles is None:
@@ -494,6 +511,16 @@ if __name__ == '__main__':
 #     for i in circles[0,:]:
 #         cv.circle(curr_frame, (i[0], i[1]), i[2], (0,255,0), 2)
 #         cv.circle(curr_frame, (i[0], i[1]), 2, (0, 0, 255), 3)
+
+
+# --- Find Canny Edges ---
+# edged = cv.Canny(fgmask, 30, 200)
+# # edged = cv.Canny(curr_frame, 30, 200)
+# contours, hier = cv.findContours(edged, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
+# cv.imshow('Canny Edges', edged)
+
+# cv.drawContours(curr_frame, contours, -1, (0, 255, 0), 3)
+
 
 
 # cv.imshow('Contours', curr_frame)

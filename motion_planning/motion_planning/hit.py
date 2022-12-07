@@ -1,12 +1,13 @@
 import rclpy
 from .ekf_predict import ekf
 import numpy as np
+from scipy.optimize import curve_fit
 from geometry_msgs.msg import Point, Pose
 from enum import Enum, auto
 from rclpy.node import Node
 import matplotlib.pyplot as plt  
 import cv2 as cv
-
+import math
 
 class KF:
     def __init__(self):
@@ -88,8 +89,9 @@ class hit(Node):
         #            out the z coordinate.
 
         # replace the following coordinates with actual tracking data
-        gathered_pts = 8
+        gathered_pts = 15
         if self.receive_state == State.PUB and len(self.balloon_pos_x) < gathered_pts:
+            self.get_logger().info("Gathering Points")
             # transform from cam to robot base frame
             Trc = np.array([[1,0,0,1.11], 
                             [0,0,1,-1.7], 
@@ -114,6 +116,8 @@ class hit(Node):
             self.state = State.GO
         
         if self.state == State.GO:
+            self.get_logger().info("Starting Prediction")
+            # --- Stuff We have been using ---
             x = np.array(self.balloon_pos_x)
             y = np.array(self.balloon_pos_y)
             z = np.array(self.balloon_pos_z)
@@ -127,16 +131,19 @@ class hit(Node):
             predicted_x=[]
             predicted_y=[]
             predicted_z=[]
+
             for i in range(4):
                 predicted = self.kf.kf_predict(predicted[0], predicted[1], predicted[2] )
                 predicted_x.append(predicted[0][0])
                 predicted_y.append(predicted[1][0])
                 predicted_z.append(predicted[2][0])
 
-            self.move_to.position.x = float(predicted[0][0])
-            self.move_to.position.y = float(predicted[1][0])
-            self.move_to.position.z = float(0.3)
+            # self.move_to.position.x = float(predicted[0][0])
+            # self.move_to.position.y = float(predicted[1][0])
             # self.move_to.position.z = float(predicted[2][0])
+            self.move_to.position.x = float(0.6)
+            self.move_to.position.y = float(0.0)
+            self.move_to.position.z = float(0.3)
 
             pred = predicted
             print("predicted final point: " + str(pred))
@@ -161,6 +168,7 @@ class hit(Node):
                               self.move_to.position.z)
 
             # publish this to Inverse Kinematics and move the arm
+            self.get_logger().info("Publishing Point")
             self.ee_pos_pub.publish(self.move_to)
             # self.state = State.STOP
 
@@ -174,34 +182,34 @@ class hit(Node):
             ax.set_zlabel('z')
             plt.show()
 
-            self.get_logger().info("predicted point" + str(self.move_to))
+            # self.get_logger().info("predicted point" + str(self.move_to))
 
-            ########### Extended Kalman Filter Prediction ###############
-            # Calculate x y z velocity of balloon
-            # using collected points. 
-            diffx = np.diff(np.array(self.balloon_pos_x))
-            velx = np.sum(diffx)/(diffx.shape[0] * self.timer_period)
+            # ########### Extended Kalman Filter Prediction ###############
+            # # Calculate x y z velocity of balloon
+            # # using collected points. 
+            # diffx = np.diff(np.array(self.balloon_pos_x))
+            # velx = np.sum(diffx)/(diffx.shape[0] * self.timer_period)
 
-            diffy = np.diff(np.array(self.balloon_pos_y))
-            vely = np.sum(diffy)/(diffy.shape[0] * self.timer_period)
+            # diffy = np.diff(np.array(self.balloon_pos_y))
+            # vely = np.sum(diffy)/(diffy.shape[0] * self.timer_period)
 
-            diffz = np.diff(np.array(self.balloon_pos_z))
-            velz = np.sum(diffz)/(diffz.shape[0] * self.timer_period)
+            # diffz = np.diff(np.array(self.balloon_pos_z))
+            # velz = np.sum(diffz)/(diffz.shape[0] * self.timer_period)
 
-            # prediction using EKF
-            pred_pts_x = []
-            pred_pts_y = []
-            pred_pts_z = []
-            predicted_num = 5
-            state_estimate_k_minus_1 = np.array([x[-1], y[-1], z[-1]])
-            control_k_minus_1 = np.array([velx, vely, velz])
-            for i in range(predicted_num):
-                predicted_pt = ekf(state_estimate_k_minus_1, control_k_minus_1, \
-                                               velx, vely, velz)
-                state_estimate_k_minus_1 = predicted_pt
-                pred_pts_x.append(predicted_pt[0])
-                pred_pts_y.append(predicted_pt[1])
-                pred_pts_z.append(predicted_pt[2])
+            # # prediction using EKF
+            # pred_pts_x = []
+            # pred_pts_y = []
+            # pred_pts_z = []
+            # predicted_num = 5
+            # state_estimate_k_minus_1 = np.array([x[-1], y[-1], z[-1]])
+            # control_k_minus_1 = np.array([velx, vely, velz])
+            # for i in range(predicted_num):
+            #     predicted_pt = ekf(state_estimate_k_minus_1, control_k_minus_1, \
+            #                                    velx, vely, velz)
+            #     state_estimate_k_minus_1 = predicted_pt
+            #     pred_pts_x.append(predicted_pt[0])
+            #     pred_pts_y.append(predicted_pt[1])
+            #     pred_pts_z.append(predicted_pt[2])
 
             # fig = plt.figure()
             # ax = plt.axes(projection='3d')
