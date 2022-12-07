@@ -45,14 +45,14 @@ sensor_noise_w_k = np.array([0.07,0.07,0.04])
 
 def getB(velx, vely, velz):
     """
-    Calculates and returns the B matrix
-    3x3 matix -> number of states x number of control inputs
-    The control inputs are the speed of the balloon.
-    Expresses how the state of the system [x,y,z] changes
-    from k-1 to k due to the control commands (i.e. control input).
-    :param yaw: The yaw angle (rotation angle around the z axis) in rad 
-    :param deltak: The change in time from time step k-1 to k in sec
-    """
+    Calculates and returns the B matrix
+    3x3 matix -> number of states x number of control inputs
+    The control inputs are the speed of the balloon.
+    Expresses how the state of the system [x,y,z] changes
+    from k-1 to k due to the control commands (i.e. control input).
+    :param yaw: The yaw angle (rotation angle around the z axis) in rad 
+    :param deltak: The change in time from time step k-1 to k in sec
+    """
     B = np.eye(3)
     B[0, 0] = velx
     B[1, 1] = vely
@@ -62,27 +62,27 @@ def getB(velx, vely, velz):
 def ekf(state_estimate_k_minus_1, control_vector_k_minus_1, vx, vy, vz):
     """
     Extended Kalman Filter. Fuses noisy sensor measurement to 
-    create an optimal estimate of the state of the robotic system.
-         
-    INPUT
-        :param z_k_observation_vector The observation from the Odometry
-            3x1 NumPy Array [x,y,z] in the global reference frame
-        :param state_estimate_k_minus_1 The state estimate at time k-1
-            3x1 NumPy Array [x,y,z] in the global reference frame
-            in [meters,meters,meters].
-        :param control_vector_k_minus_1 The control vector applied at time k-1
-            3x1 NumPy Array [v,v,z rate] in the global reference frame
-            in [meters per second,meters per second,radians per second].
-        :param P_k_minus_1 The state covariance matrix estimate at time k-1
-            3x3 NumPy Array
-        :param dk Time interval in seconds
-             
-    OUTPUT
-        :return state_estimate_k near-optimal state estimate at time k  
-            3x1 NumPy Array ---> [meters,meters,meters]
-        :return P_k state covariance_estimate for time k
-            3x3 NumPy Array                 
-    """
+    create an optimal estimate of the state of the robotic system.
+
+    INPUT
+        :param z_k_observation_vector The observation from the Odometry
+            3x1 NumPy Array [x,y,z] in the global reference frame
+        :param state_estimate_k_minus_1 The state estimate at time k-1
+            3x1 NumPy Array [x,y,z] in the global reference frame
+                in [meters,meters,meters].
+        :param control_vector_k_minus_1 The control vector applied at time k-1
+            3x1 NumPy Array [v,v,z rate] in the global reference frame
+            in [meters per second,meters per second,radians per second].
+        :param P_k_minus_1 The state covariance matrix estimate at time k-1
+            3x3 NumPy Array
+        :param dk Time interval in seconds
+
+    OUTPUT
+        :return state_estimate_k near-optimal state estimate at time k  
+    3x1 NumPy Array ---> [meters,meters,meters]
+    :return P_k state covariance_estimate for time k
+    3x3 NumPy Array                 
+    """
     ######################### Predict #############################
     # Predict the state estimate at time k based on the state 
     # estimate at time k-1 and the control input applied at time k-1.

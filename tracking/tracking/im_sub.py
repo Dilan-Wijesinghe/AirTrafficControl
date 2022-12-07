@@ -141,7 +141,7 @@ class ImageSubscriber(Node):
         # varThreshold -> How sensitive to look at the foreground objects. 
         #              -> Low varThreshold is more sensitive, high is less
         # detectShadows-> Boolean determining whether to detect shadows
-        self.bgsub = cv.createBackgroundSubtractorMOG2(history = 500, varThreshold = 5, \
+        self.bgsub = cv.createBackgroundSubtractorMOG2(history = 1000, varThreshold = 5, \
                                                        detectShadows = False)
         self.state = State.NOTPUB
         
@@ -177,7 +177,7 @@ class ImageSubscriber(Node):
             self.color_frame = cv.GaussianBlur(curr_frame, (11,11), 0)
             self.vid_pub.publish(self.bridge.cv2_to_imgmsg(self.color_frame)) # Publish msg 
 
-            self.remove_bg(clip_dist=3.0) # Remove background
+            self.remove_bg(clip_dist=5.0) # Remove background
 
             # --- Color Variations ---
             frame_HSV = cv.cvtColor(self.bg_removed, cv.COLOR_BGR2HSV)
@@ -214,7 +214,7 @@ class ImageSubscriber(Node):
                 # --- Drawing Onto the Frames ---
                 ((x,y), r) = cv.minEnclosingCircle(MaxCont)
                 if self.intr:
-                    if r > 25: # Change depending on size and distance from camera
+                    if r > 10: # Change depending on size and distance from camera
                         self.state = State.PUB # Change ability to publish
                         self.get_logger().info("Found An Object to Publish")
                         # --- Current Moment for Centroid Finding ---
