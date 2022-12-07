@@ -290,8 +290,6 @@ class hit(Node):
                             [0,0,1,-1.7], 
                             [0,-1,0,0.735], 
                             [0,0,0,1]])
-            # Rrc = Trc[0:3, 0:3]
-            # prc = Trc[:, 3]
             v_cam = np.array([self.balloon_pos.x, self.balloon_pos.y, self.balloon_pos.z, 1]) # balloon pos in cam frame
             v_robot = Trc @ v_cam.reshape((4,1)) # balloon pos in robot base frame
              
