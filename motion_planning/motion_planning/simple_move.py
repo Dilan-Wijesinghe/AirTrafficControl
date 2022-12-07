@@ -859,7 +859,8 @@ class Mover(Node):
         self.ik_soln = RobotState()
         self.max_vel_scale = 0.3
         self.balloon_z = 0.12 # m from paddle to balloon
-        self.orient_constraint = Quaternion(x=0., y=0., z=0., w=1.)
+        self.joint_tolerance = self.max_vel_scale / 10.
+        self.orient_constraint = Quaternion(x=1., y=0., z=0., w=0.)
 
     def set_start_callback(self, request, response):
         """
