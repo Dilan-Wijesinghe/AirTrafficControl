@@ -861,7 +861,32 @@ class Mover(Node):
         self.balloon_z = 0.12 # m from paddle to balloon
         self.orient_constraint = Quaternion(x=0., y=0., z=0., w=1.)
 
-    def set_start_callback(self, request, response):
+    def cartesian_waypoint_callback(self, waypoint):
+        """
+        Get waypoint(s) for cartesian path.
+
+        Args: waypoints (Pose): Waypoints for desired cartesian path.
+
+        Returns: None
+        """
+        self.get_logger().info("Cartesian waypoints Get!")
+        self.ik_pose.position.x = waypoint.position.x
+        self.ik_pose.position.y = waypoint.position.y
+        self.ik_pose.position.z = waypoint.position.z
+        self.ik_pose.orientation.x = waypoint.orientation.x
+        self.ik_pose.orientation.y = waypoint.orientation.y
+        self.ik_pose.orientation.z = waypoint.orientation.z
+        self.ik_pose.orientation.w = waypoint.orientation.w
+        
+        if waypoint not in self.cartesian_waypoint:
+            hit_waypoint = waypoint
+            hit_waypoint.position.z = waypoint.position.z + self.balloon_z/2
+            self.cartesian_waypoint.append(waypoint)
+
+        if self.robot_state == State.NOTSET:
+            self.robot_state = State.GO
+
+    def set_start_callback(self, request):
         """
         Get waypoint(s) for cartesian path.
 
