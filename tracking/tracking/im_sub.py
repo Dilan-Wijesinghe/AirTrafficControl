@@ -11,7 +11,7 @@ import pyrealsense2 as rs
 
 
 # Defining Values needed for HSV detection
-# [trackbar]
+# # [trackbar]
 # max_value = 360//2
 # low_h = 100
 # high_h = 360//2
@@ -174,17 +174,32 @@ class ImageSubscriber(Node):
             self.get_logger().info("Receiving video_frames", once=True)
             # curr_frame = self.bridge.imgmsg_to_cv2(data, desired_encoding='mono8') # Convert ROS image msg to OpenCV image
             curr_frame = self.bridge.imgmsg_to_cv2(data, desired_encoding='bgr8') # Convert ROS image msg to OpenCV image
-            self.color_frame = cv.GaussianBlur(curr_frame, (5,5), 0)
+            self.color_frame = cv.GaussianBlur(curr_frame, (11,11), 0)
             self.vid_pub.publish(self.bridge.cv2_to_imgmsg(self.color_frame)) # Publish msg 
 
-            self.remove_bg(clip_dist=3.1) # Remove background
-            self.bg_sub(self.bg_removed) # Apply Background subtraction
+            self.remove_bg(clip_dist=1.5) # Remove background
+
+            # --- Color Variations ---
+            frame_HSV = cv.cvtColor(self.bg_removed, cv.COLOR_BGR2HSV)
+            frame_HSV_not = cv.bitwise_not(frame_HSV)
+            
+            frame_thresh = cv.inRange(frame_HSV_not, (35, 6, 10), (171, 131, 126))
+            # HSV = 48.4, 40, 87
+            # HSV = 64.8, 100, 44
+            # HSV = 105.5, 27, 96
+            
+            # Get Real Moving Object
+            self.bg_sub(frame_thresh) # Apply Background subtraction
+            # real = cv.bitwise_and(frame_HSV_not, frame_HSV_not, mask=self.fgmask)
+            # cv.imshow("Hi", frame_thresh)
+            #real = cv.bitwise_and(self.bg_removed, self.bg_removed, mask=self.fgmask)
+            
+            # cv.imshow(wind_name, frame_thresh)
 
             # Detect Contours
             contours, _ = cv.findContours(self.fgmask, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE)
             self.coords = Point()
 
-           
             try:
                 # print("Found Contours")
                 areas = [cv.contourArea(cont) for cont in contours] # Loop over the contours
@@ -199,9 +214,9 @@ class ImageSubscriber(Node):
                 # --- Drawing Onto the Frames ---
                 ((x,y), r) = cv.minEnclosingCircle(MaxCont)
                 if self.intr:
-                    if r > 25:
+                    if r > 50: # Change depending on size and distance from camera
                         self.state = State.PUB # Change ability to publish
-                        print("Found An Object to Publish")
+                        self.get_logger().info("Found An Object to Publish")
                         # --- Current Moment for Centroid Finding ---
                         for cont in contours:
                             # if cv.contourArea(cont) > 1000:
@@ -224,16 +239,15 @@ class ImageSubscriber(Node):
             except:
                 pass
 
-            # Get Real Moving Object
-            real = cv.bitwise_and(self.color_frame, self.color_frame, mask=self.fgmask)
-            #real = cv.bitwise_and(self.bg_removed, self.bg_removed, mask=self.fgmask)
 
             # fgmask 3 channeled
             fgmask_3 = cv.cvtColor(self.fgmask, cv.COLOR_GRAY2BGR)
-
+            frame_thresh3 = cv.cvtColor(frame_thresh, cv.COLOR_GRAY2BGR)
+            
             # Stack all three frames 
-            stacked = np.vstack((fgmask_3, self.color_frame, real))
-            cv.imshow("Stacked", cv.resize(stacked, None, fx=0.70, fy=0.70))
+            stacked = np.vstack((fgmask_3, frame_thresh3, self.color_frame))
+            # cv.imshow("Color Frame with Contours", cv.resize(self.color_frame, None, fx=0.40, fy=0.40))
+            cv.imshow("Stacked", cv.resize(stacked, None, fx=0.40, fy=0.40))
 
             # --- Get Real Coords ---
             if len(areas) != 0:
@@ -454,7 +468,6 @@ if __name__ == '__main__':
 #     print(f"Centroid: {MaxCentroid}")
 # except:
 #     print("Contour not found")
-
 
 
 # --- Find Canny Edges ---
