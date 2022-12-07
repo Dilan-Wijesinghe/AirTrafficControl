@@ -137,6 +137,7 @@ class Mover(Node):
         self.ik_pose = Pose()
         self.ik_soln = RobotState()
         self.max_vel_scale = 0.3
+        self.balloon_z = 0.12 # m from paddle to balloon
         self.orient_constraint = Quaternion(x=0., y=0., z=0., w=1.)
 
     def cartesian_waypoint_callback(self, waypoint):
@@ -148,11 +149,21 @@ class Mover(Node):
         Returns: None
         """
         self.get_logger().info("Cartesian waypoints Get!")
+        self.ik_pose.position.x = waypoint.position.x
+        self.ik_pose.position.y = waypoint.position.y
+        self.ik_pose.position.z = waypoint.position.z
+        self.ik_pose.orientation.x = waypoint.orientation.x
+        self.ik_pose.orientation.y = waypoint.orientation.y
+        self.ik_pose.orientation.z = waypoint.orientation.z
+        self.ik_pose.orientation.w = waypoint.orientation.w
+        
         if waypoint not in self.cartesian_waypoint:
+            hit_waypoint = waypoint
+            hit_waypoint.position.z = waypoint.position.z + self.balloon_z/2
             self.cartesian_waypoint.append(waypoint)
 
-        if self.cartesian == State.NOTSET:
-            self.cartesian = State.GO
+        if self.robot_state == State.NOTSET:
+            self.robot_state = State.GO
 
     def set_start_callback(self, request):
         """
@@ -368,7 +379,7 @@ class Mover(Node):
                     self.robot_state = State.NOTSET
                 else:
                     self.final_js = ik_future.result().solution.joint_state.position
-                    self.robot_state = State.NOTSET
+                    # self.robot_state = State.NOTSET
                     self.send_goal()
 
         ################# Obtain FINAL joint state for Cartesian Waypoint(s) #################
@@ -384,7 +395,6 @@ class Mover(Node):
                                          jump_threshold=info_list[6],
                                          avoid_collisions=info_list[7]))
                                         #  path_constraints=info_list[8]))
-            print('waiting')
             await cart_future
 
             if cart_future.done():
@@ -690,7 +700,10 @@ class Mover(Node):
         Returns: None
         """
         self.get_logger().info("Trajectory execution done")
-        self.robot_state = State.NOTSET
+        if self.robot_state == State.GO:
+            self.robot_state = State.NOTSET
+            self.cartesian = State.GO
+            
 
     def wait_callback(self, request, response):
         """
