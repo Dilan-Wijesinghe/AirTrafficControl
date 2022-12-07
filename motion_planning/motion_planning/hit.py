@@ -195,16 +195,15 @@
 #     main()
  
 import rclpy
-import math
+import ekf_predict
 import numpy as np
-from scipy.optimize import curve_fit
 from geometry_msgs.msg import Point, Pose
-# import simple_move as move
 from enum import Enum, auto
 from rclpy.node import Node
 import matplotlib.pyplot as plt  
 import cv2 as cv
-# from motion_planning_interfaces.srv import GetPose
+
+
 class KF:
     def __init__(self):
         self.kf = cv.KalmanFilter(6,3,0)
@@ -242,8 +241,8 @@ class hit(Node):
     def __init__(self):
         super().__init__('hit')
 
-        timer_period = 0.01
-        self.timer = self.create_timer(timer_period, self.timer_callback)
+        self.timer_period = 0.01
+        self.timer = self.create_timer(self.timer_period, self.timer_callback)
         self.balloonpos = self.create_subscription(Point, 'balloon_coords', self.balloon_callback, 10)
         self.ee_pos_pub = self.create_publisher(Pose, 'cartesian_waypoint', 10)
 
@@ -254,7 +253,8 @@ class hit(Node):
         self.receive_state = State.NOTPUB
         self.balloon_pos = Point()
         self.move_to = Pose()
-
+        self.last_time = 0.
+        self.curr_time = 0.
         self.kf = KF()
 
     def balloon_callback(self, msg):
@@ -374,7 +374,32 @@ class hit(Node):
 
             self.get_logger().info("predicted point" + str(self.move_to))
 
-        # TODO: Generalize the ee pose
+            ########### Extended Kalman Filter Prediction ###############
+            # Calculate x y z velocity of balloon
+            # using collected points. 
+            diffx = np.diff(np.array(self.balloon_pos_x))
+            velx = np.sum(diffx)/(diffx.shape[0] * self.timer_period)
+
+            diffy = np.diff(np.array(self.balloon_pos_y))
+            vely = np.sum(diffy)/(diffy.shape[0] * self.timer_period)
+
+            diffz = np.diff(np.array(self.balloon_pos_z))
+            velz = np.sum(diffz)/(diffz.shape[0] * self.timer_period)
+
+            # prediction using EKF
+            pred_pts = []
+            predicted_num = 20
+            state_estimate_k_minus_1 = np.array([x[-1], y[-1], z[-1]])
+            control_k_minus_1 = np.array([velx, vely, velz])
+            for i in range(predicted_num):
+                predicted_pt = ekf_predict.ekf(state_estimate_k_minus_1, control_k_minus_1, \
+                                               velx, vely, velz)
+                state_estimate_k_minus_1 = predicted_pt
+                pred_pts.append(predicted_pt)
+
+            
+                
+
 
 def main(args=None):
     rclpy.init(args=None)
