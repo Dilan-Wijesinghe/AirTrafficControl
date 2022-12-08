@@ -102,10 +102,11 @@ class Mover(Node):
         self.joint_state_sub = self.create_subscription(JointState, "joint_states",
                                                         self.js_callback, 10)
         self.set_start = self.create_subscription(Pose, '/set_start', self.set_start_callback, 10)
+        self.curr_pos_pub = self.create_publisher(Point, 'curr_ee_pos', 10)
 
 
         ########## State variables for control #############
-        self.curr_pos = None
+        self.curr_pos = Point()
         self.execute_immediately = True
         self.robot_state = State.NOTSET
         self.set_start_state = State.NOTSET
@@ -136,8 +137,9 @@ class Mover(Node):
         self.ik_robot_states = PoseStamped()
         self.ik_pose = Pose()
         self.ik_soln = RobotState()
-        self.max_vel_scale = 1.0
-        self.max_acc_scale = 1.0
+        self.max_vel_scale = 0.1
+        self.max_acc_scale = 0.1
+        self.hard_code_vel_scale = 1.0
         self.balloon_z = 0.12 # m from paddle to balloon
         self.orient_constraint = Quaternion(x=0., y=0., z=0., w=1.)
         self.joint_tolerance = 0.3 / 10.0 # We need to change this
@@ -163,9 +165,10 @@ class Mover(Node):
             hit_waypoint = waypoint
             hit_waypoint.position.z = waypoint.position.z + self.balloon_z/2
             self.cartesian_waypoint.append(waypoint)
+            self.cartesian = State.GO
 
-        if self.robot_state == State.NOTSET:
-            self.robot_state = State.GO
+        # if self.robot_state == State.NOTSET:
+        #     self.robot_state = State.GO
 
     def set_start_callback(self, request):
         """
@@ -176,6 +179,7 @@ class Mover(Node):
         Returns: None
         """
         self.get_logger().info("Cartesian waypoints Get!")
+        waypoint = request
         self.ik_pose.position.x = waypoint.position.x
         self.ik_pose.position.y = waypoint.position.y
         self.ik_pose.position.z = waypoint.position.z
@@ -260,9 +264,9 @@ class Mover(Node):
         Returns: A GetPoseResponse
         """
         self.get_logger().info("Starting Set Orient")
-        self.ik_pose.position.x = self.curr_pos[0]
-        self.ik_pose.position.y = self.curr_pos[1]
-        self.ik_pose.position.z = self.curr_pos[2]
+        self.ik_pose.position.x = self.curr_pos.x
+        self.ik_pose.position.y = self.curr_pos.y
+        self.ik_pose.position.z = self.curr_pos.z
         self.ik_pose.orientation.x = request.pose.orientation.x
         self.ik_pose.orientation.y = request.pose.orientation.y
         self.ik_pose.orientation.z = request.pose.orientation.z
@@ -379,10 +383,10 @@ class Mover(Node):
             try:
                 self.tf_base_arm = self.tf_buffer.lookup_transform('panda_link0',
                                                                    'panda_hand', rclpy.time.Time())
-                self.curr_pos = [self.tf_base_arm.transform.translation.x,
-                                 self.tf_base_arm.transform.translation.y,
-                                 self.tf_base_arm.transform.translation.z]
-
+                self.curr_pos.x  = self.tf_base_arm.transform.translation.x
+                self.curr_pos.y  = self.tf_base_arm.transform.translation.y
+                self.curr_pos.z  = self.tf_base_arm.transform.translation.z
+                self.curr_pos_pub.publish(self.curr_pos)
             except TransformException as ex:
                 self.get_logger().info(f'Could not transform : {ex}')
 
@@ -410,8 +414,27 @@ class Mover(Node):
             # cons.orientation_constraints.append(orient_cons)
             # self.ik_states.constraints = cons
 
-            # self.ik_states.avoid_collisions = True
+            self.ik_states.avoid_collisions = True
 
+            js = JointState()
+            js_header = Header()
+            js_header.stamp = self.get_clock().now().to_msg()
+            js_header.frame_id = 'panda_link0'
+            js.header = js_header
+            js.name = [
+                'panda_joint1',
+                'panda_joint2',
+                'panda_joint3',
+                'panda_joint4',
+                'panda_joint5',
+                'panda_joint6',
+                'panda_joint7',
+                'panda_finger_joint1',
+                'panda_finger_joint2'
+            ]
+            js.position = self.curr_joint_pos
+            self.ik_states.robot_state.joint_state = js
+            # print(self.ik_states)
             ik_future = self.ik_client.call_async(GetPositionIK.Request(ik_request=self.ik_states))
             await ik_future
 
@@ -445,7 +468,7 @@ class Mover(Node):
                 if cart_future.result().error_code.val < -1:
                     self.get_logger().info(f'Cannot get cartesian path')
                     print('The number of waypoints executed were:')
-                    print(cart_future.result().fraction)
+                    # print(cart_future.result().fraction)
                     self.send_cart_goal = State.NOTSET
                 else:
                     self.cart_traj = cart_future.result().solution
@@ -492,10 +515,9 @@ class Mover(Node):
         # waypoints list
         way_pts = self.cartesian_waypoint
 
-        max_step = 0.1
-        jump_threshold = 2.0
+        max_step = 0.7
+        jump_threshold = 10.
         avoid_coll = True
-
 
         cons = Constraints()
         cons.name = 'stay_level'
@@ -510,7 +532,7 @@ class Mover(Node):
         orient_cons.weight = 1.0
         cons.orientation_constraints.append(orient_cons)
         
-        info_list = [header_msg, cart_rob_state, group_name, link_name, way_pts, max_step, jump_threshold, avoid_coll, cons] # , cons if want constraint
+        info_list = [header_msg, cart_rob_state, group_name, link_name, way_pts, max_step, jump_threshold, avoid_coll] #, cons] # , cons if want constraint
 
         return info_list
 
@@ -707,14 +729,26 @@ class Mover(Node):
         Returns: None
         """
         trajectory = ExecuteTrajectory.Goal()
-        trajectory.trajectory = self.planned_trajectory
-
+        # print(self.planned_trajectory.joint_trajectory)
         # get joint trajectory from planned trajectory
         # joint_pt_list = self.planned_trajectory.joint_trajectory.points
+        print(self.planned_trajectory)
+        self.get_logger().info("Execute trajectory yo")
+        for i in range(len(self.planned_trajectory.joint_trajectory.points)):
+            for j in range(len(self.planned_trajectory.joint_trajectory.points[i].velocities)):
+                self.planned_trajectory.joint_trajectory.points[i].velocities[j] = self.planned_trajectory.joint_trajectory.points[i].velocities[j]*self.hard_code_vel_scale
+                self.planned_trajectory.joint_trajectory.points[i].accelerations[j] = self.planned_trajectory.joint_trajectory.points[i].accelerations[j]*self.hard_code_vel_scale
+            new_time = (self.planned_trajectory.joint_trajectory.points[i].time_from_start.sec + self.planned_trajectory.joint_trajectory.points[i].time_from_start.nanosec * 1e-9)/self.hard_code_vel_scale
+            self.planned_trajectory.joint_trajectory.points[i].time_from_start.sec = int(new_time)
+            self.planned_trajectory.joint_trajectory.points[i].time_from_start.nanosec = int((new_time % 1) * 1e9)
+
+        print(self.planned_trajectory)
         traj_duration = (self.planned_trajectory.joint_trajectory.points[-1].time_from_start)
         self.traj_time = traj_duration.sec + traj_duration.nanosec * 10**(-9)
+        # print('old time')
         print(self.traj_time)
-
+        trajectory.trajectory = self.planned_trajectory
+        # print(trajectory)
         # send the request
         self.execute_traj.wait_for_server()
 
