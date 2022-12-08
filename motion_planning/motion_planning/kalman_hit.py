@@ -7,7 +7,7 @@ from enum import Enum, auto
 from rclpy.node import Node
 import matplotlib.pyplot as plt  
 import cv2 as cv
-import math
+import math, time
 
 class KF:
     def __init__(self):
@@ -72,6 +72,7 @@ class hit(Node):
         self.curr_pos = Point()
         self.offset = 0.1
         self.first_point = True
+        self.idx = 0
 
         # transform from cam to robot base frame
         self.Trc = np.array([[1,0,0,1.11], 
@@ -80,7 +81,7 @@ class hit(Node):
                              [0,0,0,1]])
 
         # Z Threshold for Letting it Know when to record
-        self.z_thresh = 1.225
+        self.z_thresh = 1.25
         self.is_falling = False
         self.cycle_complete = State.NOTSET
 
@@ -119,10 +120,10 @@ class hit(Node):
         # Check if the z is within that certain range
         self.check_falling(latest_z = v_robot[2])
         # print(f"Check Fall: {self.is_falling}")
-        gathered_pts = 2
+        gathered_pts = 4
         if self.receive_state == State.PUB and len(self.balloon_pos_x) < gathered_pts and self.is_falling:
             self.get_logger().info("Gathering Points")
-
+            self.time_init = time.time()
             # The points used for curve fit are already in the robot base frame
             v_robot = v_robot[0:3]
             
@@ -137,7 +138,8 @@ class hit(Node):
                 self.balloon_pos_z.append(b_pos[2][0])
                 self.first_point = False
 
-            if self.balloon_pos_x[0] != b_pos[0][0] and not self.first_point:
+            if self.balloon_pos_x[self.idx] != b_pos[0][0] and not self.first_point:
+                self.idx += 1
                 self.balloon_pos_x.append(b_pos[0][0])
                 self.balloon_pos_y.append(b_pos[1][0])
                 self.balloon_pos_z.append(b_pos[2][0])
@@ -146,40 +148,41 @@ class hit(Node):
         elif len(self.balloon_pos_x) >= gathered_pts and self.receive_state == State.PUB:
             self.state = State.GO
             ## calculate the initial x and y velocity
-            print(self.balloon_pos_x, self.balloon_pos_y)
-            velx = (self.balloon_pos_x[1] - self.balloon_pos_x[0])/0.01
-            vely = (self.balloon_pos_y[1] - self.balloon_pos_y[0])/0.01
+            # print(self.balloon_pos_x, self.balloon_pos_y)
+            # velx = (self.balloon_pos_x[1] - self.balloon_pos_x[0])/0.01
+            # vely = (self.balloon_pos_y[1] - self.balloon_pos_y[0])/0.01
             # velz = (self.balloon_pos_z[1] - self.balloon_pos_z[0])/0.01
 
-            self.get_logger().info("x velocity: " + str(velx) + "y velocity: " + str(vely)) #+ "z velocity: " + str(velz))
+            # self.get_logger().info("x velocity: " + str(velx) + "y velocity: " + str(vely)) #+ "z velocity: " + str(velz))
         
         if self.state == State.GO and self.cycle_complete == State.NOTSET:
             self.get_logger().info("Starting Prediction")
+            
             # --- Stuff We have been using ---
             x = np.array(self.balloon_pos_x)
             y = np.array(self.balloon_pos_y)
             z = np.array(self.balloon_pos_z)
 
             #  print("Shape is:", len(self.balloon_pos_x))
-            # for i in range(len(self.balloon_pos_x)):
-            #     pt_x = self.balloon_pos_x[i]
-            #     pt_y = self.balloon_pos_y[i]
-            #     # pt_z = self.balloon_pos_z[i]
-            #     predicted = self.kf.kf_predict(pt_x, pt_y)
+            for i in range(len(self.balloon_pos_x)):
+                pt_x = self.balloon_pos_x[i]
+                pt_y = self.balloon_pos_y[i]
+                # pt_z = self.balloon_pos_z[i]
+                predicted = self.kf.kf_predict(pt_x, pt_y)
             predicted_x=[]
             predicted_y=[]
             # predicted_z=[]
-            init_x = self.balloon_pos_x[0]
-            init_y = self.balloon_pos_y[0]
-            dt = 0.01
-            for _ in range(12):
-                init_x += velx * dt
-                init_y += vely * dt
-                predicted_x.append(init_x)
-                predicted_y.append(init_y)
-                # predicted = self.kf.kf_predict(predicted[0], predicted[1])
-                # predicted_x.append(predicted[0][0])
-                # predicted_y.append(predicted[1][0])
+            # init_x = self.balloon_pos_x[0]
+            # init_y = self.balloon_pos_y[0]
+            # dt = 0.01
+            for _ in range(10):
+                # init_x += velx * dt
+                # init_y += vely * dt
+                # predicted_x.append(init_x)
+                # predicted_y.append(init_y)
+                predicted = self.kf.kf_predict(predicted[0], predicted[1])
+                predicted_x.append(predicted[0][0])
+                predicted_y.append(predicted[1][0])
                 # predicted_z.append(predicted[2][0])
 
             # choose the closest point
@@ -187,8 +190,6 @@ class hit(Node):
             pred_y = np.array(predicted_y)
             distances = np.sqrt(np.power(pred_x - self.curr_pos.x, 2) + np.power(pred_y - self.curr_pos.y, 2))
             indx = np.argmin(distances)
-            minx = pred_x[indx]
-            miny = pred_y[indx]
 
             # # self.get_logger().info(f"Predicted X: {pred_x}, Predicted Y: {pred_y}")
 
@@ -224,6 +225,7 @@ class hit(Node):
             if self.cycle_complete == State.NOTSET:
                 # self.get_logger().info("Publishing Point")
                 self.ee_pos_pub.publish(self.move_to)
+                print(time.time() - self.time_init)
                 self.cycle_complete = State.GO
                 self.is_falling = False
             
@@ -305,3 +307,4 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
+ 
