@@ -2,7 +2,7 @@ import rclpy
 from .ekf_predict import ekf
 import numpy as np
 from scipy.optimize import curve_fit
-from geometry_msgs.msg import Point, Pose
+from geometry_msgs.msg import Point, Pose, PoseArray
 from enum import Enum, auto
 from rclpy.node import Node
 import matplotlib.pyplot as plt  
@@ -57,11 +57,12 @@ class hit(Node):
         self.balloonpos = self.create_subscription(Point, 'balloon_coords', self.balloon_callback, 10)
         self.curr_pos_sub = self.create_subscription(Point, 'curr_ee_pos', self.curr_pos_callback, 10)
         # self.ee_pos_pub = self.create_publisher(Pose, 'set_pose', 10)
-        self.ee_pos_pub = self.create_publisher(Pose, 'cartesian_waypoint', 10)
+        self.ee_pos_pub = self.create_publisher(PoseArray, 'cartesian_waypoint', 10)
 
         self.balloon_pos_x = []
         self.balloon_pos_y = []
         self.balloon_pos_z = []
+        self.way_pts = PoseArray()
         self.state = State.NOTSET
         self.receive_state = State.NOTPUB
         self.balloon_pos = Point()
@@ -187,8 +188,8 @@ class hit(Node):
             pred_y = np.array(predicted_y)
             distances = np.sqrt(np.power(pred_x - self.curr_pos.x, 2) + np.power(pred_y - self.curr_pos.y, 2))
             indx = np.argmin(distances)
-            minx = pred_x[indx]
-            miny = pred_y[indx]
+            # minx = pred_x[indx]
+            # miny = pred_y[indx]
 
             # # self.get_logger().info(f"Predicted X: {pred_x}, Predicted Y: {pred_y}")
 
@@ -198,24 +199,25 @@ class hit(Node):
             self.move_to.position.y = float(pred_y[indx]) #- self.offset
             self.move_to.position.z = float(0.25)
 
+            self.move_to.orientation.w = 0.0
+            self.move_to.orientation.x = 1.0
+            self.move_to.orientation.y = 0.0
+            self.move_to.orientation.z = 0.0
+            self.way_pts.poses.append(self.move_to)
+
             # pred = predicted
             # print("predicted final point: " + str(pred))
 
             # face the end effector upward
-            rot_ang = np.pi/2
-            x_ang = 0.3
-            y_ang = 0.0
-            z_ang = 0.0
+            # rot_ang = np.pi/2
+            # x_ang = 0.3
+            # y_ang = 0.0
+            # z_ang = 0.0
 
             # qw = np.cos(rot_ang/2)
             # qx = np.sin(rot_ang/2)*np.cos(x_ang)
             # qy = np.sin(rot_ang/2)*np.cos(y_ang)
             # qz = np.sin(sot_ang/2)*np.cos(z_ang)
-
-            self.move_to.orientation.w = 0.0
-            self.move_to.orientation.x = 1.0
-            self.move_to.orientation.y = 0.0
-            self.move_to.orientation.z = 0.0
 
             print("Move To" , self.move_to.position.x, self.move_to.position.y, \
                               self.move_to.position.z)
@@ -223,21 +225,32 @@ class hit(Node):
             # publish this to Inverse Kinematics and move the arm
             if self.cycle_complete == State.NOTSET:
                 # self.get_logger().info("Publishing Point")
-                self.ee_pos_pub.publish(self.move_to)
+
+                # publish the second point to the topic
+                self.move_to.position.x = float(pred_x[indx]) #+ self.offset
+                self.move_to.position.y = float(pred_y[indx]) #- self.offset
+                self.move_to.position.z = float(0.5) # This value doesn't matter
+
+                self.move_to.orientation.w = 0.0
+                self.move_to.orientation.x = 1.0
+                self.move_to.orientation.y = 0.0
+                self.move_to.orientation.z = 0.0
+
+                self.way_pts.poses.append(self.move_to)
+                self.ee_pos_pub.publish(self.way_pts)
+
                 self.cycle_complete = State.GO
                 self.is_falling = False
-            
 
-
-            fig = plt.figure()
-            ax = plt.axes(projection='3d')
-            ax.plot(x, y, z, 'xk')
-            ax.plot(x[0], y[0], z[0], 'ob')
-            ax.plot(pred_x, pred_y, 'xr')
-            ax.set_xlabel('x')
-            ax.set_ylabel('y')
-            ax.set_zlabel('z')
-            plt.show()
+            # fig = plt.figure()
+            # ax = plt.axes(projection='3d')
+            # ax.plot(x, y, z, 'xk')
+            # ax.plot(x[0], y[0], z[0], 'ob')
+            # ax.plot(pred_x, pred_y, 'xr')
+            # ax.set_xlabel('x')
+            # ax.set_ylabel('y')
+            # ax.set_zlabel('z')
+            # plt.show()
 
             # self.get_logger().info("predicted point" + str(self.move_to))
 
