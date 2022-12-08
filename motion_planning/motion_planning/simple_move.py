@@ -36,10 +36,10 @@ from moveit_msgs.msg import Constraints, JointConstraint, MotionPlanRequest, \
     OrientationConstraint
 from sensor_msgs.msg import JointState
 from moveit_msgs.srv import GetPositionIK, GetPlanningScene, GetCartesianPath
-from trajectory_msgs.msg import JointTrajectory
+from control_msgs.msg import JointTrajectoryControllerState
 from shape_msgs.msg import SolidPrimitive
 from std_msgs.msg import Header
-from geometry_msgs.msg import Vector3, PoseStamped, Pose, Point, Quaternion
+from geometry_msgs.msg import Vector3, PoseStamped, Pose, Point, Quaternion, PoseArray
 from tf2_ros.transform_listener import TransformListener
 from tf2_ros.buffer import Buffer
 from std_srvs.srv import SetBool as Bool
@@ -88,7 +88,9 @@ class Mover(Node):
         self.scene_result = PlanningScene()
 
         ########## For planning trajectory #############
-        self.get_cartesian_waypoint = self.create_subscription(Pose, 'cartesian_waypoint', 
+        # self.get_cartesian_waypoint = self.create_subscription(Pose, 'cartesian_waypoint', 
+        #                                                        self.cartesian_waypoint_callback, 10)
+        self.get_cartesian_waypoint = self.create_subscription(PoseArray, 'cartesian_waypoint', 
                                                                self.cartesian_waypoint_callback, 10)
         self.get_cartesian_traj = self.create_client(GetCartesianPath, 'compute_cartesian_path', 
                                                      callback_group=self.cbgroup)
@@ -99,7 +101,7 @@ class Mover(Node):
                                                                self.wait_callback)
         self.tf_buffer = Buffer() # TF buffer for our listener
         self.tf_listener = TransformListener(self.tf_buffer, self) # TL to get ee pos
-        self.joint_state_sub = self.create_subscription(JointState, "joint_states",
+        self.joint_state_sub = self.create_subscription(JointState, "panda_arm_controller/state",
                                                         self.js_callback, 10)
         self.set_start = self.create_subscription(Pose, '/set_start', self.set_start_callback, 10)
         self.curr_pos_pub = self.create_publisher(Point, 'curr_ee_pos', 10)
@@ -113,6 +115,8 @@ class Mover(Node):
         self.user_start_config = False
         self.cartesian = State.NOTSET
         self.send_cart_goal = State.NOTSET
+        self.reach_waypoint = State.NOTSET
+        self.waypoint_indx = 0
         
         ########## Useful variables ################
         # initial starting joint_states, UNLESS user has specified a start configuration
@@ -142,33 +146,40 @@ class Mover(Node):
         self.hard_code_vel_scale = 1.8
         self.balloon_z = 0.12 # m from paddle to balloon
         self.orient_constraint = Quaternion(x=1., y=0., z=0., w=0.)
-        self.joint_tolerance = 0.3 / 10.0 # We need to change this
+        self.joint_tolerance = 0.1 / 20.0 # We need to change this
+        self.tofu = 0
+        self.joint_traj_controller_state = JointTrajectoryControllerState()
+        self.curr_joint_pos = []
 
-    def cartesian_waypoint_callback(self, waypoint):
+    def cartesian_waypoint_callback(self, waypoints: PoseArray):
         """
         Get waypoint(s) for cartesian path.
 
-        Args: waypoints (Pose): Waypoints for desired cartesian path.
+        Args: waypoints (Pose): list of Pose for desired cartesian path.
 
         Returns: None
         """
+        self.cartesian_waypoint = []
         self.get_logger().info("Cartesian waypoints Get!")
-        self.ik_pose.position.x = waypoint.position.x
-        self.ik_pose.position.y = waypoint.position.y
-        self.ik_pose.position.z = waypoint.position.z
-        self.ik_pose.orientation.x = waypoint.orientation.x
-        self.ik_pose.orientation.y = waypoint.orientation.y
-        self.ik_pose.orientation.z = waypoint.orientation.z
-        self.ik_pose.orientation.w = waypoint.orientation.w
-        
-        if waypoint not in self.cartesian_waypoint:
-            hit_waypoint = waypoint
-            # hit_waypoint.position.z = waypoint.position.z + self.balloon_z/2
-            self.cartesian_waypoint.append(waypoint)
-            self.cartesian = State.GO
+        for waypoint in range(len(waypoints.poses)):
+            # self.ik_pose.position.x = waypoint.position.x
+            # self.ik_pose.position.y = waypoint.position.y
+            # self.ik_pose.position.z = waypoint.position.z
+            # self.ik_pose.orientation.x = waypoint.orientation.x
+            # self.ik_pose.orientation.y = waypoint.orientation.y
+            # self.ik_pose.orientation.z = waypoint.orientation.z
+            # self.ik_pose.orientation.w = waypoint.orientation.w
+            
+            # if waypoint not in self.cartesian_waypoint:
+                # hit_waypoint = waypoint
+                # hit_waypoint.position.z = waypoint.position.z + self.balloon_z/2
+            
+            # MAKE SURE TO SET TO CORRECT POSITION FIRST!
+            waypoints.poses[waypoint].position.z = self.curr_pos.z
+            self.cartesian_waypoint.append(waypoints.poses[waypoint])
 
-        # if self.robot_state == State.NOTSET:
-        #     self.robot_state = State.GO
+        self.reach_waypoint = State.OBTAINED
+        self.cartesian = State.GO
 
     def set_start_callback(self, request):
         """
@@ -178,6 +189,7 @@ class Mover(Node):
 
         Returns: None
         """
+        self.cartesian_waypoint = []
         self.get_logger().info("Cartesian waypoints Get SET START!")
         waypoint = request
         self.ik_pose.position.x = waypoint.position.x
@@ -191,32 +203,34 @@ class Mover(Node):
         if waypoint not in self.cartesian_waypoint:
             hit_waypoint = waypoint
             # hit_waypoint.position.z = waypoint.position.z + self.balloon_z/2
+            print("waypoint", waypoint)
             self.cartesian_waypoint.append(waypoint)
 
         if self.robot_state == State.NOTSET:
-            self.robot_state = State.GO
+            # self.robot_state = State.GO
+            self.cartesian = State.GO
 
-    def set_start_callback(self, request):
-        """
-        Get the start position and change state.
+    # def set_start_callback(self, request):
+    #     """
+    #     Get the start position and change state.
 
-        Args: request (GetPoseRequest): Position and orientation of the end effector
+    #     Args: request (GetPoseRequest): Position and orientation of the end effector
 
-        Returns: None
-        """
-        self.get_logger().info("Set starting pose!")
-        if self.set_start_state == State.NOTSET:
-            self.start_config.position.x = request.pose.position.x
-            self.start_config.position.y = request.pose.position.y
-            self.start_config.position.z = request.pose.position.z
-            self.start_config.orientation.x = request.pose.orientation.x
-            self.start_config.orientation.y = request.pose.orientation.y
-            self.start_config.orientation.z = request.pose.orientation.z
-            self.start_config.orientation.w = request.pose.orientation.w
+    #     Returns: None
+    #     """
+    #     self.get_logger().info("Set starting pose!")
+    #     if self.set_start_state == State.NOTSET:
+    #         self.start_config.position.x = request.pose.position.x
+    #         self.start_config.position.y = request.pose.position.y
+    #         self.start_config.position.z = request.pose.position.z
+    #         self.start_config.orientation.x = request.pose.orientation.x
+    #         self.start_config.orientation.y = request.pose.orientation.y
+    #         self.start_config.orientation.z = request.pose.orientation.z
+    #         self.start_config.orientation.w = request.pose.orientation.w
 
-            self.set_start_state = State.GO
-            self.user_start_config = True
-            self.execute_immediately = False
+    #         self.set_start_state = State.GO
+    #         self.user_start_config = True
+    #         self.execute_immediately = False
 
     def set_box(self, request, response):
         """
@@ -305,6 +319,52 @@ class Mover(Node):
 
         Returns: None
         """
+        ################# Check whether the EE reaches the waypoint ####################
+        if self.reach_waypoint == State.OBTAINED and len(self.cartesian_waypoint) != 0:
+            # use the transform listener to determine curr EE pose
+            target = self.cartesian_waypoint[0] # this is a position object
+            targetx = target.position.x
+            targety = target.position.y
+
+            self.get_logger().info('pos x err' + str(self.curr_pos.x - targetx) + 'pos y err' + str(self.curr_pos.y - targety)) #, once=True)
+            
+            if abs(self.curr_pos.x - targetx) < 0.3 and abs(self.curr_pos.y - targety) < 0.3:
+                print(f"Poop {self.curr_pos.x - targetx}")
+                if self.tofu < 70:
+                    self.tofu += 1
+                else:
+                    #tofu = 0
+                    print("pee")
+                    self.reach_waypoint = State.GO
+                    self.waypoint_indx += 1
+                    self.cartesian_waypoint[self.waypoint_indx].position.z = self.cartesian_waypoint[self.waypoint_indx-1].position.z + 0.1
+                    info_list = self.send_cartesian_goal()
+
+                    cart_future = self.get_cartesian_traj.call_async(
+                    GetCartesianPath.Request(header=info_list[0],
+                                            start_state=info_list[1],
+                                            group_name=info_list[2],
+                                            link_name=info_list[3],
+                                            waypoints=info_list[4],
+                                            max_step=info_list[5],
+                                            jump_threshold=info_list[6],
+                                            avoid_collisions=info_list[7]))
+
+                    await cart_future
+
+                    if cart_future.done():
+                        if cart_future.result().error_code.val < -1:
+                            self.get_logger().info(f'Cannot get cartesian path')
+                            print('The number of waypoints executed were:')
+                            # print(cart_future.result().fraction)
+                            self.send_cart_goal = State.NOTSET
+                        else:
+                            self.cart_traj = cart_future.result().solution
+                            # print(self.cart_traj)
+                            self.planned_trajectory = self.cart_traj
+                            self.cartesian = State.NOTSET
+                            self.exe_trajectory()
+                            self.get_logger().info(f'Start 2nd Cartesian Path!')
 
         ################# Obtain joint states for START Pose ####################
         if self.set_start_state == State.GO:
@@ -472,7 +532,7 @@ class Mover(Node):
                     self.send_cart_goal = State.NOTSET
                 else:
                     self.cart_traj = cart_future.result().solution
-                    print(self.cart_traj)
+                    # print(self.cart_traj)
                     self.planned_trajectory = self.cart_traj
                     self.cartesian = State.NOTSET
                     self.exe_trajectory()
@@ -493,6 +553,7 @@ class Mover(Node):
         # start of cartesian path
         cart_rob_state = RobotState()
         cart_start_js = JointState()
+        
         cart_start_js.name = [
             'panda_joint1',
             'panda_joint2',
@@ -505,6 +566,8 @@ class Mover(Node):
             'panda_finger_joint2'
         ]
         cart_start_js.position = self.curr_joint_pos
+        cart_start_js.header = header_msg
+        print(cart_start_js)
         cart_rob_state.joint_state = cart_start_js
         
         group_name = "panda_arm"
@@ -513,9 +576,14 @@ class Mover(Node):
         link_name = 'panda_hand_tcp'
 
         # waypoints list
-        way_pts = self.cartesian_waypoint
+        print("Hi", len(self.cartesian_waypoint), self.waypoint_indx)
+        way_pts = [self.cartesian_waypoint[self.waypoint_indx]]
 
-        max_step = 0.5
+        if self.waypoint_indx == 0:
+            max_step = 0.01
+        if self.waypoint_indx == 1:
+            self.hard_code_vel_scale = 2.4
+            max_step = 0.01
         jump_threshold = 50.
         avoid_coll = True
 
@@ -732,7 +800,7 @@ class Mover(Node):
         # print(self.planned_trajectory.joint_trajectory)
         # get joint trajectory from planned trajectory
         # joint_pt_list = self.planned_trajectory.joint_trajectory.points
-        print(self.planned_trajectory)
+        # print(self.planned_trajectory)
         self.get_logger().info("Execute trajectory yo")
         for i in range(len(self.planned_trajectory.joint_trajectory.points)):
             for j in range(len(self.planned_trajectory.joint_trajectory.points[i].velocities)):
@@ -742,7 +810,7 @@ class Mover(Node):
             self.planned_trajectory.joint_trajectory.points[i].time_from_start.sec = int(new_time)
             self.planned_trajectory.joint_trajectory.points[i].time_from_start.nanosec = int((new_time % 1) * 1e9)
 
-        print(self.planned_trajectory)
+        #print(self.planned_trajectory)
         traj_duration = (self.planned_trajectory.joint_trajectory.points[-1].time_from_start)
         self.traj_time = traj_duration.sec + traj_duration.nanosec * 10**(-9)
         # print('old time')
@@ -765,7 +833,7 @@ class Mover(Node):
         """
         self.get_logger().info("Trajectory execution done")
         self.robot_state = State.NOTSET     # sub to joint_states, get the curr pos, and update it
-        self.get_logger().info(f"Current State is {self.robot_state}")
+        self.get_logger().info(f"Current Z is {self.curr_pos.z}")
 
     def wait_callback(self, request, response):
         """
@@ -792,7 +860,8 @@ class Mover(Node):
 
         Returns: None
         """
-        self.curr_joint_pos = msg.position
+        self.joint_traj_controller_state = msg
+        self.curr_joint_pos = self.joint_traj_controller_state.actual.positions
         return
 
 
