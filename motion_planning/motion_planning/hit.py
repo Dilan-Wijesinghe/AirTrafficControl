@@ -70,6 +70,8 @@ class hit(Node):
         self.curr_time = 0.
         self.kf = KF()
         self.curr_pos = Point()
+        self.offset = 0.1
+        self.first_point = True
 
         # transform from cam to robot base frame
         self.Trc = np.array([[1,0,0,1.11], 
@@ -78,7 +80,7 @@ class hit(Node):
                              [0,0,0,1]])
 
         # Z Threshold for Letting it Know when to record
-        self.z_thresh = 0.8
+        self.z_thresh = 1.3
         self.is_falling = False
         self.cycle_complete = State.NOTSET
 
@@ -116,8 +118,8 @@ class hit(Node):
 
         # Check if the z is within that certain range
         self.check_falling(latest_z = v_robot[2])
-        print(f"Check Fall: {self.is_falling}")
-        gathered_pts = 30
+        # print(f"Check Fall: {self.is_falling}")
+        gathered_pts = 2
         if self.receive_state == State.PUB and len(self.balloon_pos_x) < gathered_pts and self.is_falling:
             self.get_logger().info("Gathering Points")
 
@@ -126,17 +128,30 @@ class hit(Node):
             
             b_pos = v_robot
 
-            print("balloon in robot frame: " + str(b_pos))
-            print("balloon in cam frame: " + str(v_cam))
+            # print("balloon in robot frame: " + str(b_pos))
+            # print("balloon in cam frame: " + str(v_cam))
             
-            self.balloon_pos_x.append(b_pos[0][0])
-            self.balloon_pos_y.append(b_pos[1][0])
-            self.balloon_pos_z.append(b_pos[2][0])
+            if self.first_point:
+                self.balloon_pos_x.append(b_pos[0][0])
+                self.balloon_pos_y.append(b_pos[1][0])
+                self.balloon_pos_z.append(b_pos[2][0])
+                self.first_point = False
 
-      
-        
+            if self.balloon_pos_x[0] != b_pos[0][0] and not self.first_point:
+                self.balloon_pos_x.append(b_pos[0][0])
+                self.balloon_pos_y.append(b_pos[1][0])
+                self.balloon_pos_z.append(b_pos[2][0])
+
+            
         elif len(self.balloon_pos_x) >= gathered_pts and self.receive_state == State.PUB:
             self.state = State.GO
+            ## calculate the initial x and y velocity
+            print(self.balloon_pos_x, self.balloon_pos_y)
+            velx = (self.balloon_pos_x[1] - self.balloon_pos_x[0])/0.01
+            vely = (self.balloon_pos_y[1] - self.balloon_pos_y[0])/0.01
+            # velz = (self.balloon_pos_z[1] - self.balloon_pos_z[0])/0.01
+
+            self.get_logger().info("x velocity: " + str(velx) + "y velocity: " + str(vely)) #+ "z velocity: " + str(velz))
         
         if self.state == State.GO and self.cycle_complete == State.NOTSET:
             self.get_logger().info("Starting Prediction")
@@ -145,20 +160,26 @@ class hit(Node):
             y = np.array(self.balloon_pos_y)
             z = np.array(self.balloon_pos_z)
 
-            print("Shape is:", len(self.balloon_pos_x))
-            for i in range(len(self.balloon_pos_x)):
-                pt_x = self.balloon_pos_x[i]
-                pt_y = self.balloon_pos_y[i]
-                # pt_z = self.balloon_pos_z[i]
-                predicted = self.kf.kf_predict(pt_x, pt_y)
+            #  print("Shape is:", len(self.balloon_pos_x))
+            # for i in range(len(self.balloon_pos_x)):
+            #     pt_x = self.balloon_pos_x[i]
+            #     pt_y = self.balloon_pos_y[i]
+            #     # pt_z = self.balloon_pos_z[i]
+            #     predicted = self.kf.kf_predict(pt_x, pt_y)
             predicted_x=[]
             predicted_y=[]
             # predicted_z=[]
-
-            for i in range(5):
-                predicted = self.kf.kf_predict(predicted[0], predicted[1])
-                predicted_x.append(predicted[0][0])
-                predicted_y.append(predicted[1][0])
+            init_x = self.balloon_pos_x[0]
+            init_y = self.balloon_pos_y[0]
+            dt = 0.01
+            for _ in range(12):
+                init_x += velx * dt
+                init_y += vely * dt
+                predicted_x.append(init_x)
+                predicted_y.append(init_y)
+                # predicted = self.kf.kf_predict(predicted[0], predicted[1])
+                # predicted_x.append(predicted[0][0])
+                # predicted_y.append(predicted[1][0])
                 # predicted_z.append(predicted[2][0])
 
             # choose the closest point
@@ -169,14 +190,16 @@ class hit(Node):
             minx = pred_x[indx]
             miny = pred_y[indx]
 
-            # self.move_to.position.x = float(predicted[0][0])
-            # self.move_to.position.y = float(predicted[1][0])
-            self.move_to.position.x = float(minx)
-            self.move_to.position.y = float(miny)
-            self.move_to.position.z = float(0.3)
+            # # self.get_logger().info(f"Predicted X: {pred_x}, Predicted Y: {pred_y}")
 
-            pred = predicted
-            print("predicted final point: " + str(pred))
+            # # self.move_to.position.x = float(predicted[0][0])
+            # # self.move_to.position.y = float(predicted[1][0])
+            self.move_to.position.x = float(pred_x[indx]) #+ self.offset
+            self.move_to.position.y = float(pred_y[indx]) #- self.offset
+            self.move_to.position.z = float(0.25)
+
+            # pred = predicted
+            # print("predicted final point: " + str(pred))
 
             # face the end effector upward
             rot_ang = np.pi/2
@@ -187,7 +210,7 @@ class hit(Node):
             # qw = np.cos(rot_ang/2)
             # qx = np.sin(rot_ang/2)*np.cos(x_ang)
             # qy = np.sin(rot_ang/2)*np.cos(y_ang)
-            # qz = np.sin(rot_ang/2)*np.cos(z_ang)
+            # qz = np.sin(sot_ang/2)*np.cos(z_ang)
 
             self.move_to.orientation.w = 0.0
             self.move_to.orientation.x = 1.0
@@ -199,7 +222,7 @@ class hit(Node):
 
             # publish this to Inverse Kinematics and move the arm
             if self.cycle_complete == State.NOTSET:
-                self.get_logger().info("Publishing Point")
+                # self.get_logger().info("Publishing Point")
                 self.ee_pos_pub.publish(self.move_to)
                 self.cycle_complete = State.GO
                 self.is_falling = False
@@ -261,7 +284,7 @@ class hit(Node):
 
                 
     def check_falling(self, latest_z):
-        print(latest_z)
+        # print(latest_z)
         if latest_z == self.Trc[2,-1]:
             self.is_falling = False
         else: 

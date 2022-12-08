@@ -139,9 +139,9 @@ class Mover(Node):
         self.ik_soln = RobotState()
         self.max_vel_scale = 0.1
         self.max_acc_scale = 0.1
-        self.hard_code_vel_scale = 1.0
+        self.hard_code_vel_scale = 1.8
         self.balloon_z = 0.12 # m from paddle to balloon
-        self.orient_constraint = Quaternion(x=0., y=0., z=0., w=1.)
+        self.orient_constraint = Quaternion(x=1., y=0., z=0., w=0.)
         self.joint_tolerance = 0.3 / 10.0 # We need to change this
 
     def cartesian_waypoint_callback(self, waypoint):
@@ -163,7 +163,7 @@ class Mover(Node):
         
         if waypoint not in self.cartesian_waypoint:
             hit_waypoint = waypoint
-            hit_waypoint.position.z = waypoint.position.z + self.balloon_z/2
+            # hit_waypoint.position.z = waypoint.position.z + self.balloon_z/2
             self.cartesian_waypoint.append(waypoint)
             self.cartesian = State.GO
 
@@ -178,7 +178,7 @@ class Mover(Node):
 
         Returns: None
         """
-        self.get_logger().info("Cartesian waypoints Get!")
+        self.get_logger().info("Cartesian waypoints Get SET START!")
         waypoint = request
         self.ik_pose.position.x = waypoint.position.x
         self.ik_pose.position.y = waypoint.position.y
@@ -190,7 +190,7 @@ class Mover(Node):
         
         if waypoint not in self.cartesian_waypoint:
             hit_waypoint = waypoint
-            hit_waypoint.position.z = waypoint.position.z + self.balloon_z/2
+            # hit_waypoint.position.z = waypoint.position.z + self.balloon_z/2
             self.cartesian_waypoint.append(waypoint)
 
         if self.robot_state == State.NOTSET:
@@ -515,8 +515,8 @@ class Mover(Node):
         # waypoints list
         way_pts = self.cartesian_waypoint
 
-        max_step = 0.7
-        jump_threshold = 10.
+        max_step = 0.5
+        jump_threshold = 50.
         avoid_coll = True
 
         cons = Constraints()
