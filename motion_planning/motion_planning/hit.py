@@ -98,6 +98,7 @@ class hit(Node):
         self.balloon_pos_y = []
         self.balloon_pos_z = []
         self.state_cb_called = True
+        self.way_pts = PoseArray()
 
     def balloon_callback(self, msg):
         if msg.x != 0 and msg.y !=0 and msg.z != 0:
@@ -252,7 +253,6 @@ class hit(Node):
 
                 self.way_pts.poses.append(self.move_to)
                 self.ee_pos_pub.publish(self.way_pts)
-
                 self.cycle_complete = State.GO
                 self.is_falling = False
                 self.state_cb_called = False

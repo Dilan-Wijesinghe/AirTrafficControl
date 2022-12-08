@@ -118,6 +118,7 @@ class Mover(Node):
         self.cartesian = State.NOTSET
         self.send_cart_goal = State.NOTSET
         self.reach_waypoint = State.NOTSET
+        self.gohome = State.NOTSET
         self.waypoint_indx = 0
         
         ########## Useful variables ################
@@ -145,7 +146,7 @@ class Mover(Node):
         self.ik_soln = RobotState()
         self.max_vel_scale = 0.1
         self.max_acc_scale = 0.1
-        self.hard_code_vel_scale = 1.8
+        self.hard_code_vel_scale = 1.5
         self.balloon_z = 0.12 # m from paddle to balloon
         self.orient_constraint = Quaternion(x=1., y=0., z=0., w=0.)
         self.joint_tolerance = 0.1 / 20.0 # We need to change this
@@ -163,8 +164,8 @@ class Mover(Node):
         Returns: None
         """
         self.cartesian_waypoint = []
-        self.get_logger().info("Cartesian waypoints Get!")
-        print(len(waypoints.poses))
+        # self.get_logger().info("Cartesian waypoints Get!")
+        # print(len(waypoints.poses))
         for waypoint in range(len(waypoints.poses)):
             # self.ik_pose.position.x = waypoint.position.x
             # self.ik_pose.position.y = waypoint.position.y
@@ -180,7 +181,7 @@ class Mover(Node):
             
             # MAKE SURE TO SET TO CORRECT POSITION FIRST!
             if self.tofu == -1:
-                print('we out here')
+                # print('we out here')
                 waypoints.poses[waypoint].position.z = self.curr_pos.z - 0.2
             else:
                 waypoints.poses[waypoint].position.z = self.curr_pos.z
@@ -188,6 +189,7 @@ class Mover(Node):
 
         self.reach_waypoint = State.OBTAINED
         self.cartesian = State.GO
+        self.gohome = State.NOTSET
 
     def set_start_callback(self, request):
         """
@@ -334,16 +336,14 @@ class Mover(Node):
             targetx = target.position.x
             targety = target.position.y
 
-            self.get_logger().info('pos x err' + str(self.curr_pos.x - targetx) + 'pos y err' + str(self.curr_pos.y - targety), once=True)
+            #self.get_logger().info('pos x err' + str(self.curr_pos.x - targetx) + 'pos y err' + str(self.curr_pos.y - targety), once=True)
             
             if abs(self.curr_pos.x - targetx) < 0.3 and abs(self.curr_pos.y - targety) < 0.3:
-                # print(f"Poop {self.curr_pos.x - targetx}")
-                if self.tofu < 70:
+                if self.tofu < 50:
                     self.tofu += 1
                 else:
                     self.tofu = 0
-                    print('index')
-                    print(self.waypoint_indx)
+                    print(f'index: {self.waypoint_indx}')
                     self.waypoint_indx += 1
 
                     # only send the cartesian request if the index is in range. 
@@ -375,13 +375,58 @@ class Mover(Node):
                                 self.cartesian = State.NOTSET
                                 self.exe_trajectory()
                                 self.get_logger().info(f'Start 2nd Cartesian Path!')
+                                # self.waypoint_indx += 1
+                                print('cycle complete --> restart')
+                                self.tofu = -1
+                                self.cartesian_waypoint = []
+                                self.state_pub.publish(Empty())
+                                self.waypoint_indx = 0
+                                self.reach_waypoint = State.NOTSET
 
-                    else:
-                        print('2nd waypoint reached')
-                        self.waypoint_indx = 0
-                        self.reach_waypoint = State.NOTSET
-                        self.state_pub.publish(Empty())
-                        self.tofu = -1
+                    # elif self.gohome == State.NOTSET:
+                    #     self.waypoint_indx = 0
+                    #     self.reach_waypoint = State.NOTSET
+
+                    #     home_config = Pose()
+                    #     home_config.position.x = 0.4
+                    #     home_config.position.y = 0.25
+                    #     home_config.position.z = 0.15
+                    #     home_config.orientation.x = 1.0
+                    #     home_config.orientation.y = 0.
+                    #     home_config.orientation.z = 0.
+                    #     home_config.orientation.w = 0.
+                    #     self.cartesian_waypoint = [home_config]
+
+                    #     info_list = self.send_cartesian_goal()
+
+                    #     cart_future = self.get_cartesian_traj.call_async(
+                    #     GetCartesianPath.Request(header=info_list[0],
+                    #                             start_state=info_list[1],
+                    #                             group_name=info_list[2],
+                    #                             link_name=info_list[3],
+                    #                             waypoints=info_list[4],
+                    #                             max_step=info_list[5],
+                    #                             jump_threshold=info_list[6],
+                    #                             avoid_collisions=info_list[7]))
+
+                    #     await cart_future
+
+                    #     if cart_future.done():
+                    #         if cart_future.result().error_code.val < -1:
+                    #             self.get_logger().info(f'Cannot get cartesian path')
+                    #             print('The number of waypoints executed were:')
+                    #             print(cart_future.result().fraction)
+                    #             self.send_cart_goal = State.NOTSET
+                    #         else:
+                    #             self.cart_traj = cart_future.result().solution
+                    #             self.planned_trajectory = self.cart_traj
+                    #             self.cartesian = State.NOTSET
+                    #             self.exe_trajectory()
+                    #             self.get_logger().info(f'Going back to home config!')
+
+                    #             self.gohome = State.GO
+                                # self.cartesian_waypoint = []
+                                # self.state_pub.publish(Empty())
 
 
         ################# Obtain joint states for START Pose ####################
@@ -593,13 +638,13 @@ class Mover(Node):
         link_name = 'panda_hand_tcp'
 
         # waypoints list
-        print("Hi", len(self.cartesian_waypoint), self.waypoint_indx)
+        print(f"Curr Length of Cart WP: {len(self.cartesian_waypoint)} idx: {self.waypoint_indx}")
         way_pts = [self.cartesian_waypoint[self.waypoint_indx]]
 
      
         # self.hard_code_vel_scale = 2.4
         if self.waypoint_indx == 0:
-            max_step = 0.4
+            max_step = 0.1
         else:
             max_step = 0.01
         jump_threshold = 50.
@@ -832,7 +877,9 @@ class Mover(Node):
         traj_duration = (self.planned_trajectory.joint_trajectory.points[-1].time_from_start)
         self.traj_time = traj_duration.sec + traj_duration.nanosec * 10**(-9)
         # print('old time')
-        print(self.traj_time)
+        print(f"Plan + Execute Time: {self.traj_time}")
+        if self.traj_time < 0.1:
+            print(self.planned_trajectory.joint_trajectory.points)
         trajectory.trajectory = self.planned_trajectory
         # print(trajectory)
         # send the request
