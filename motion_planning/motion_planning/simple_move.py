@@ -43,6 +43,7 @@ from geometry_msgs.msg import Vector3, PoseStamped, Pose, Point, Quaternion, Pos
 from tf2_ros.transform_listener import TransformListener
 from tf2_ros.buffer import Buffer
 from std_srvs.srv import SetBool as Bool
+from std_msgs.msg import Empty
 from tf2_ros import TransformException
 from motion_planning_interfaces.srv import GetPose
 
@@ -105,6 +106,7 @@ class Mover(Node):
                                                         self.js_callback, 10)
         self.set_start = self.create_subscription(Pose, '/set_start', self.set_start_callback, 10)
         self.curr_pos_pub = self.create_publisher(Point, 'curr_ee_pos', 10)
+        self.state_pub = self.create_publisher(Empty, 'cart_cycle_complete', 10)
 
 
         ########## State variables for control #############
@@ -150,6 +152,7 @@ class Mover(Node):
         self.tofu = 0
         self.joint_traj_controller_state = JointTrajectoryControllerState()
         self.curr_joint_pos = []
+        self.empty_msg = Empty()
 
     def cartesian_waypoint_callback(self, waypoints: PoseArray):
         """
@@ -161,6 +164,7 @@ class Mover(Node):
         """
         self.cartesian_waypoint = []
         self.get_logger().info("Cartesian waypoints Get!")
+        print(len(waypoints.poses))
         for waypoint in range(len(waypoints.poses)):
             # self.ik_pose.position.x = waypoint.position.x
             # self.ik_pose.position.y = waypoint.position.y
@@ -175,7 +179,11 @@ class Mover(Node):
                 # hit_waypoint.position.z = waypoint.position.z + self.balloon_z/2
             
             # MAKE SURE TO SET TO CORRECT POSITION FIRST!
-            waypoints.poses[waypoint].position.z = self.curr_pos.z
+            if self.tofu == -1:
+                print('we out here')
+                waypoints.poses[waypoint].position.z = self.curr_pos.z - 0.2
+            else:
+                waypoints.poses[waypoint].position.z = self.curr_pos.z
             self.cartesian_waypoint.append(waypoints.poses[waypoint])
 
         self.reach_waypoint = State.OBTAINED
@@ -322,49 +330,59 @@ class Mover(Node):
         ################# Check whether the EE reaches the waypoint ####################
         if self.reach_waypoint == State.OBTAINED and len(self.cartesian_waypoint) != 0:
             # use the transform listener to determine curr EE pose
-            target = self.cartesian_waypoint[0] # this is a position object
+            target = self.cartesian_waypoint[self.waypoint_indx] # this is a position object
             targetx = target.position.x
             targety = target.position.y
 
-            self.get_logger().info('pos x err' + str(self.curr_pos.x - targetx) + 'pos y err' + str(self.curr_pos.y - targety)) #, once=True)
+            self.get_logger().info('pos x err' + str(self.curr_pos.x - targetx) + 'pos y err' + str(self.curr_pos.y - targety), once=True)
             
             if abs(self.curr_pos.x - targetx) < 0.3 and abs(self.curr_pos.y - targety) < 0.3:
-                print(f"Poop {self.curr_pos.x - targetx}")
+                # print(f"Poop {self.curr_pos.x - targetx}")
                 if self.tofu < 70:
                     self.tofu += 1
                 else:
-                    #tofu = 0
-                    print("pee")
-                    self.reach_waypoint = State.GO
+                    self.tofu = 0
+                    print('index')
+                    print(self.waypoint_indx)
                     self.waypoint_indx += 1
-                    self.cartesian_waypoint[self.waypoint_indx].position.z = self.cartesian_waypoint[self.waypoint_indx-1].position.z + 0.1
-                    info_list = self.send_cartesian_goal()
 
-                    cart_future = self.get_cartesian_traj.call_async(
-                    GetCartesianPath.Request(header=info_list[0],
-                                            start_state=info_list[1],
-                                            group_name=info_list[2],
-                                            link_name=info_list[3],
-                                            waypoints=info_list[4],
-                                            max_step=info_list[5],
-                                            jump_threshold=info_list[6],
-                                            avoid_collisions=info_list[7]))
+                    # only send the cartesian request if the index is in range. 
+                    if self.waypoint_indx < len(self.cartesian_waypoint):
+                        self.cartesian_waypoint[self.waypoint_indx].position.z = self.cartesian_waypoint[self.waypoint_indx-1].position.z + 0.1
+                        info_list = self.send_cartesian_goal()
 
-                    await cart_future
+                        cart_future = self.get_cartesian_traj.call_async(
+                        GetCartesianPath.Request(header=info_list[0],
+                                                start_state=info_list[1],
+                                                group_name=info_list[2],
+                                                link_name=info_list[3],
+                                                waypoints=info_list[4],
+                                                max_step=info_list[5],
+                                                jump_threshold=info_list[6],
+                                                avoid_collisions=info_list[7]))
 
-                    if cart_future.done():
-                        if cart_future.result().error_code.val < -1:
-                            self.get_logger().info(f'Cannot get cartesian path')
-                            print('The number of waypoints executed were:')
-                            # print(cart_future.result().fraction)
-                            self.send_cart_goal = State.NOTSET
-                        else:
-                            self.cart_traj = cart_future.result().solution
-                            # print(self.cart_traj)
-                            self.planned_trajectory = self.cart_traj
-                            self.cartesian = State.NOTSET
-                            self.exe_trajectory()
-                            self.get_logger().info(f'Start 2nd Cartesian Path!')
+                        await cart_future
+
+                        if cart_future.done():
+                            if cart_future.result().error_code.val < -1:
+                                self.get_logger().info(f'Cannot get cartesian path')
+                                print('The number of waypoints executed were:')
+                                print(cart_future.result().fraction)
+                                self.send_cart_goal = State.NOTSET
+                            else:
+                                self.cart_traj = cart_future.result().solution
+                                self.planned_trajectory = self.cart_traj
+                                self.cartesian = State.NOTSET
+                                self.exe_trajectory()
+                                self.get_logger().info(f'Start 2nd Cartesian Path!')
+
+                    else:
+                        print('2nd waypoint reached')
+                        self.waypoint_indx = 0
+                        self.reach_waypoint = State.NOTSET
+                        self.state_pub.publish(Empty())
+                        self.tofu = -1
+
 
         ################# Obtain joint states for START Pose ####################
         if self.set_start_state == State.GO:
@@ -567,7 +585,6 @@ class Mover(Node):
         ]
         cart_start_js.position = self.curr_joint_pos
         cart_start_js.header = header_msg
-        print(cart_start_js)
         cart_rob_state.joint_state = cart_start_js
         
         group_name = "panda_arm"
@@ -579,10 +596,11 @@ class Mover(Node):
         print("Hi", len(self.cartesian_waypoint), self.waypoint_indx)
         way_pts = [self.cartesian_waypoint[self.waypoint_indx]]
 
+     
+        # self.hard_code_vel_scale = 2.4
         if self.waypoint_indx == 0:
-            max_step = 0.01
-        if self.waypoint_indx == 1:
-            self.hard_code_vel_scale = 2.4
+            max_step = 0.4
+        else:
             max_step = 0.01
         jump_threshold = 50.
         avoid_coll = True

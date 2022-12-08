@@ -5,9 +5,9 @@ from scipy.optimize import curve_fit
 from geometry_msgs.msg import Point, Pose, PoseArray
 from enum import Enum, auto
 from rclpy.node import Node
-import matplotlib.pyplot as plt  
+import matplotlib.pyplot as plt 
 import cv2 as cv
-import math
+from std_msgs.msg import Empty
 
 class KF:
     def __init__(self):
@@ -58,6 +58,7 @@ class hit(Node):
         self.curr_pos_sub = self.create_subscription(Point, 'curr_ee_pos', self.curr_pos_callback, 10)
         # self.ee_pos_pub = self.create_publisher(Pose, 'set_pose', 10)
         self.ee_pos_pub = self.create_publisher(PoseArray, 'cartesian_waypoint', 10)
+        self.state_sub = self.create_subscription(Empty, 'cart_cycle_complete', self.state_callback, 10)
 
         self.balloon_pos_x = []
         self.balloon_pos_y = []
@@ -73,6 +74,7 @@ class hit(Node):
         self.curr_pos = Point()
         self.offset = 0.1
         self.first_point = True
+        self.state_cb_called = False
 
         # transform from cam to robot base frame
         self.Trc = np.array([[1,0,0,1.11], 
@@ -83,8 +85,19 @@ class hit(Node):
         # Z Threshold for Letting it Know when to record
         self.z_thresh = 1.225
         self.is_falling = False
+        self.is_rising = False
         self.cycle_complete = State.NOTSET
 
+    def state_callback(self, msg):
+        print("state callback reached!")
+        self.cycle_complete = State.NOTSET
+        self.state = State.STOP
+        self.first_point = True
+        self.is_falling = False
+        self.balloon_pos_x = []
+        self.balloon_pos_y = []
+        self.balloon_pos_z = []
+        self.state_cb_called = True
 
     def balloon_callback(self, msg):
         if msg.x != 0 and msg.y !=0 and msg.z != 0:
@@ -118,6 +131,7 @@ class hit(Node):
         # print(self.balloon_pos_z)
 
         # Check if the z is within that certain range
+        self.check_rising(v_robot[2])
         self.check_falling(latest_z = v_robot[2])
         # print(f"Check Fall: {self.is_falling}")
         gathered_pts = 2
@@ -147,12 +161,12 @@ class hit(Node):
         elif len(self.balloon_pos_x) >= gathered_pts and self.receive_state == State.PUB:
             self.state = State.GO
             ## calculate the initial x and y velocity
-            print(self.balloon_pos_x, self.balloon_pos_y)
+            # print(self.balloon_pos_x, self.balloon_pos_y)
             velx = (self.balloon_pos_x[1] - self.balloon_pos_x[0])/0.01
             vely = (self.balloon_pos_y[1] - self.balloon_pos_y[0])/0.01
             # velz = (self.balloon_pos_z[1] - self.balloon_pos_z[0])/0.01
 
-            self.get_logger().info("x velocity: " + str(velx) + "y velocity: " + str(vely)) #+ "z velocity: " + str(velz))
+            #self.get_logger().info("x velocity: " + str(velx) + "y velocity: " + str(vely)) #+ "z velocity: " + str(velz))
         
         if self.state == State.GO and self.cycle_complete == State.NOTSET:
             self.get_logger().info("Starting Prediction")
@@ -241,6 +255,7 @@ class hit(Node):
 
                 self.cycle_complete = State.GO
                 self.is_falling = False
+                self.state_cb_called = False
 
             # fig = plt.figure()
             # ax = plt.axes(projection='3d')
@@ -300,8 +315,15 @@ class hit(Node):
         # print(latest_z)
         if latest_z == self.Trc[2,-1]:
             self.is_falling = False
-        else: 
-            self.is_falling = True if latest_z < self.z_thresh else False
+        else:
+            if self.state_cb_called == False:
+                self.is_falling = True if latest_z < self.z_thresh else False
+            else:
+                self.is_falling = False
+    
+    def check_rising(self, latest_z):
+        if self.state_cb_called == True:
+            self.state_cb_called = False if latest_z > self.z_thresh else True
     
     def curr_pos_callback(self, msg):
         self.curr_pos.x = msg.x
