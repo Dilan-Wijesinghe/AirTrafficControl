@@ -1,33 +1,28 @@
+"""
+This python node will allow the user to manually
+set the final end effector position and orientation.
+The node can do the curve fit for you. The output was shown as a 3d_plot.
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.linear_model import LinearRegression
 
 # Point cloud get from cv
-
-data = np.array([[ 1 ,  1 ,  10 ],[ 2. ,  2.  , 9.8],[ 3 ,  3 ,  9.5 ],[ 4 ,  4 ,  9 ],
-                 [ 5 ,  5 ,  8 ], [ 6 ,  6 ,  6], [ 7 ,  7 ,  2], [ 8 ,  8 ,  4], 
-                 [ 9 ,  9 ,  8], [ 10 ,  11 ,  12], [ 12 ,  14 ,  16]])
-x = data[:,0]
-y = data[:,1]
-z = data[:,2]
-# z = np.linspace(0, 15, 10)
-# x = np.sin(z)
-# y = np.cos(z)
-
-# x = np.array(x)
-# y = np.array(y)
-# z = np.array(z)
-
-data_xy = np.array([x,y])
-data_yz = np.array([y,z])
-data_xz = np.array([x,z])
-
+data = np.array([[1, 1, 10], [2, 2, 9.8], [3, 3, 9.5], [4, 4, 9],
+                 [5, 5, 8], [6, 6, 6], [7, 7, 2], [8, 8, 4],
+                 [9, 9, 8], [10, 11, 12], [12, 14, 16]])
+x = data[:, 0]
+y = data[:, 1]
+z = data[:, 2]
+data_xy = np.array([x, y])
+data_yz = np.array([y, z])
+data_xz = np.array([x, z])
 poly = PolynomialFeatures(degree=3)
 X_t = poly.fit_transform(data_xy.transpose())
 Y_t = poly.fit_transform(data_yz.transpose())
 Z_t = poly.fit_transform(data_xz.transpose())
-
 clf = LinearRegression()
 clf.fit(X_t, z)
 z_pred = clf.predict(X_t)
@@ -38,17 +33,20 @@ y_pred = clf.predict(Z_t)
 
 # print(z)
 print(z_pred)
+
 # print(x)
 print(x_pred)
+
 # print(y)
 print(y_pred)
 
-
+# Plot figure
 fig = plt.figure()
 ax = plt.subplot(projection='3d')
-#red line is the predit data trajectory
+
+# red line is the predit data trajectory
 ax.plot(x_pred, y_pred, z_pred, 'r')
-#blue dot is the original input data
+
+# blue dot is the original input data
 ax.scatter(x, y, z)
 plt.show()
-
