@@ -250,7 +250,7 @@ class ImageSubscriber(Node):
             # Stack all three frames 
             stacked = np.vstack((fgmask_3, frame_thresh3, self.color_frame))
             # cv.imshow("Color Frame with Contours", cv.resize(self.color_frame, None, fx=0.40, fy=0.40))
-            cv.imshow("Stacked", cv.resize(stacked, None, fx=0.6, fy=0.6))
+            cv.imshow("Stacked", cv.resize(stacked, None, fx=0.65, fy=0.65))
 
             # --- Get Real Coords ---
             if len(areas) != 0:
