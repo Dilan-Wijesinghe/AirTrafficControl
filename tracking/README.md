@@ -15,8 +15,7 @@ To run simple move - `ros2 run motion_planing simple_move`
 To run hit - `ros2 run motion_planning hit`
 
 ## Quickstart
-1. Use `ros2 launch realsense2_camera rs_launch.py 
-        depth_module.profile:=1280x720x3 align_depth.enable:=true` 
-        to start the realsense camera. 
-2. Use `ros2 run tracking im_sub` to run the node in order to see the object tracking
-3. Utilize `ros2 topic echo balloon_coords` to see the `x,y,z` coordinates of the moving object
+1. Use `ros2 launch tracking tracking.launch.py`, which runs the following nodes: (You make run these individually if you want)
+        -`ros2 launch realsense2_camera rs_launch.py depth_module.profile:=1280x720x3 align_depth.enable:=true` to start the realsense camera
+        - `ros2 run tracking im_sub` to run the node in order to see the object tracking
+2. Utilize `ros2 topic echo balloon_coords` to see the `x,y,z` coordinates of the moving object
