@@ -146,7 +146,7 @@ class Mover(Node):
         self.ik_soln = RobotState()
         self.max_vel_scale = 0.1
         self.max_acc_scale = 0.1
-        self.hard_code_vel_scale = 1.5
+        self.hard_code_vel_scale = 1.65
         self.balloon_z = 0.12 # m from paddle to balloon
         self.orient_constraint = Quaternion(x=1., y=0., z=0., w=0.)
         self.joint_tolerance = 0.1 / 20.0 # We need to change this
@@ -643,10 +643,11 @@ class Mover(Node):
 
      
         # self.hard_code_vel_scale = 2.4
-        if self.waypoint_indx == 0:
-            max_step = 0.1
-        else:
-            max_step = 0.01
+        # if self.waypoint_indx == 0:
+        #     max_step = 0.1
+        # else:
+        #     max_step = 0.01
+        max_step = 0.01
         jump_threshold = 50.
         avoid_coll = True
 
