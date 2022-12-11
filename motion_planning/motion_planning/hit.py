@@ -30,6 +30,7 @@ from std_msgs.msg import Empty
 
 class KF:
     def __init__(self):
+        '''Initialize kalman filter variable'''
         self.kf = cv.KalmanFilter(2, 2, 0)
         self.kf.measurementMatrix = np.array([[1, 0],
                                               [0, 1]], np.float32)
@@ -59,6 +60,7 @@ class State(Enum):
 class hit(Node):
 
     def __init__(self):
+        '''Initialize variables for hit node.'''
         super().__init__('hit')
 
         self.timer_period = 0.01
@@ -101,6 +103,13 @@ class hit(Node):
         self.cycle_complete = State.NOTSET
 
     def state_callback(self, msg):
+        """
+        Determine the state of simple_move, by subscribing to /cart_cycle_complete.
+
+        Args: msg (Empty): Tells hit that simple_move just finished hitting the balloon once.
+
+        Returns: None
+        """
         print("state callback reached!")
         self.cycle_complete = State.NOTSET
         self.state = State.STOP
@@ -113,6 +122,13 @@ class hit(Node):
         self.way_pts = PoseArray()
 
     def balloon_callback(self, msg):
+        """
+        Subscribes to /balloon_coords to get the coordinates of the ballon centroid.
+
+        Args: msg (geometry_msgs/msg/Point): Centroid of balloon
+
+        Returns: None
+        """
         if msg.x != 0 and msg.y != 0 and msg.z != 0:
             self.balloon_pos.x = msg.x
             self.balloon_pos.y = msg.y
@@ -140,10 +156,10 @@ class hit(Node):
         # balloon pos in robot base frame
         v_robot = self.Trc @ v_cam.reshape((4, 1))
 
-        # Check if the z is within that certain range
+        # Check if the z is within the threshold range
         self.check_rising(v_robot[2])
         self.check_falling(latest_z=v_robot[2])
-        gathered_pts = 2
+        gathered_pts = 2 # number of points to recieve from camera
         if self.receive_state == State.PUB \
                 and len(self.balloon_pos_x) \
                 < gathered_pts and self.is_falling:
@@ -163,6 +179,7 @@ class hit(Node):
                 self.balloon_pos_z.append(b_pos[2][0])
 
         elif len(self.balloon_pos_x) >= gathered_pts and self.receive_state == State.PUB:
+            # determining euler step prediction for velocity
             self.state = State.GO
             # calculate the initial x and y velocity
             velx = (self.balloon_pos_x[1] - self.balloon_pos_x[0])/0.01
@@ -225,6 +242,7 @@ class hit(Node):
                 self.state_cb_called = False
 
     def check_falling(self, latest_z):
+        """Helper function to dtermine if balloon is falling."""
         if latest_z == self.Trc[2, -1]:
             self.is_falling = False
         else:
@@ -234,10 +252,18 @@ class hit(Node):
                 self.is_falling = False
 
     def check_rising(self, latest_z):
+        """Helper function to determine if balloon is rising."""
         if self.state_cb_called is True:
             self.state_cb_called = False if latest_z > self.z_thresh else True
 
     def curr_pos_callback(self, msg):
+        """
+        Subscribes to /curr_ee_pos to get the coordinates of the end-effector.
+
+        Args: msg (geometry_msgs/msg/Point): Coordinates of ee
+
+        Returns: None
+        """
         self.curr_pos.x = msg.x
         self.curr_pos.y = msg.y
         self.curr_pos.z = msg.z

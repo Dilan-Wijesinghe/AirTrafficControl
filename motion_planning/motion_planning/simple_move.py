@@ -185,7 +185,6 @@ class Mover(Node):
 
     def set_start_callback(self, request):
         """
-<<<<<<< HEAD
         Get waypoint(s) for cartesian path.
 
         Args: waypoints (Pose): Waypoints for desired cartesian path.
