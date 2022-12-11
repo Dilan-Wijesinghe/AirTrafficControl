@@ -150,9 +150,9 @@ class Mover(Node):
         self.max_vel_scale = 0.1
         self.max_acc_scale = 0.1
         self.hard_code_vel_scale = 1.0
-        self.balloon_z = 0.12 # m from paddle to balloon
+        self.balloon_z = 0.12  # m from paddle to balloon
         self.orient_constraint = Quaternion(x=0., y=0., z=0., w=1.)
-        self.joint_tolerance = 0.3 / 10.0 # We need to change this
+        self.joint_tolerance = 0.3 / 10.0  # We need to change this
 
         # m from paddle to balloon
         self.balloon_z = 0.12
@@ -482,7 +482,7 @@ class Mover(Node):
             except TransformException as ex:
                 self.get_logger().info(f'Could not transform : {ex}')
 
-        ################# Obtain FINAL joint state for target Pose #################
+        # Obtain FINAL joint state for target Pose
         if self.robot_state == State.GO:
             # filling in IK request msg
             self.ik_states.group_name = "panda_arm"

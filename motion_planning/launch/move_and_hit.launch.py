@@ -13,7 +13,7 @@ def generate_launch_description():
     return LaunchDescription([
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(
-                [os.path.join(get_package_share_directory('motion_planning')), \
+                [os.path.join(get_package_share_directory('motion_planning')),
                     '/simple_move.launch.py'])
         ),
         Node(
@@ -22,3 +22,4 @@ def generate_launch_description():
             name='hit'
         )
     ])
+    
