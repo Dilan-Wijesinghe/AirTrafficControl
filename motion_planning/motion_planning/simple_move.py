@@ -149,7 +149,10 @@ class Mover(Node):
         self.ik_soln = RobotState()
         self.max_vel_scale = 0.1
         self.max_acc_scale = 0.1
-        self.hard_code_vel_scale = 1.5
+        self.hard_code_vel_scale = 1.0
+        self.balloon_z = 0.12 # m from paddle to balloon
+        self.joint_tolerance = self.max_vel_scale / 10.
+        self.orient_constraint = Quaternion(x=1., y=0., z=0., w=0.)
 
         # m from paddle to balloon
         self.balloon_z = 0.12
