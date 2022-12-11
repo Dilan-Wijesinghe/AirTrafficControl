@@ -6,21 +6,36 @@ planning, and then execute the trajectory. Additionally, user can dynamically ad
 scene at user-defined position.
 
 PUBLISHER:
-    + /planning_scene (PlanningScene) - Publish planning scene
+    + /planning_scene (PlanningScene) - Publish planning scene.
+    + /curr_ee_pos (geometry_msgs/msg/Point) - Publish current ee position.
+    + /cart_cycle_complete (std_msgs/msg/Empty) - Publish Empty obj to act as state change signal.
+
 
 SUBSCRIBER:
-    + /joint_states (JointState) - Subscribe to the joint states of the robot
-    + /get_pose (motion_planning_interfaces/srv/GetPose) - Get the end effector position and
-                                                           orientation
-    + /get_pos (motion_planning_interfaces/srv/GetPose) - Get the end effector position
+    + /joint_states (JointState) - Subscribe to the joint states of the robot.
+    + /set_pose (geometry_msgs/msg/Pose) - Get the end effector position and
+                                                           orientation.
+    + /set_pos (geometry_msgs/msg/Pose) - Get the end effector position.
+    + /set_orient (motion_planning_interfaces/srv/GetPose) - Get end effector orientation.
+    + /cartesian_waypoint (geometry_msgs/msg/PoseArray) - Get waypoints for cartesian path.
+    + /panda_arm_controller/state (sensor_msgs/msg/JointState) - Get current Franka arm joint angles.
+    + /set_start (geometry_msgs/msg/Pose) - Get the starting Franka arm pose.
 
 SERVICES:
     + /set_box_position (motion_planning_interfaces/srv/GetPose) - Set box position in the
-                                                                   planning scene
-    + /set_orient (motion_planning_interfaces/srv/GetPose) - Set the orientation
-    + /wait_before_execute (std_srvs/srv/SetBool) - Wait to execute after planning
+                                                                   planning scene.
+    + /set_orient (motion_planning_interfaces/srv/GetPose) - Set the orientation.
+    + /wait_before_execute (std_srvs/srv/SetBool) - Wait to execute after planning.
     + /set_start (motion_planning_interfaces/srv/GetPose) - Set up the start point of the end
-                                                            effector
+                                                            effector.
+
+ACTION_CLIENT:
+    + /move_action (moveit_msgs/action/MoveGroup) - Send MotionPlanRequest for Screw Trajectory.
+    + /execute_trajectory (moveit_msgs/action/ExecuteTrajectory) - Execute planned trajectory.
+
+CLIENT:
+    + /compute_ik (moveit_msgs/srv/GetPositionIK) - Compute inverse kinematics for designated EE pose.
+    + /get_planning_scene (moveit_msgs/srv/GetPlanningScene) - Get planning scene msg.
 
 """
 
@@ -182,57 +197,6 @@ class Mover(Node):
         self.reach_waypoint = State.OBTAINED
         self.cartesian = State.GO
         self.gohome = State.NOTSET
-
-    def set_start_callback(self, request):
-        """
-        Get waypoint(s) for cartesian path.
-
-        Args: waypoints (Pose): Waypoints for desired cartesian path.
-
-        Returns: None
-        """
-        self.cartesian_waypoint = []
-        self.get_logger().info("Cartesian waypoints Get SET START!")
-        waypoint = request
-        self.ik_pose.position.x = waypoint.position.x
-        self.ik_pose.position.y = waypoint.position.y
-        self.ik_pose.position.z = waypoint.position.z
-        self.ik_pose.orientation.x = waypoint.orientation.x
-        self.ik_pose.orientation.y = waypoint.orientation.y
-        self.ik_pose.orientation.z = waypoint.orientation.z
-        self.ik_pose.orientation.w = waypoint.orientation.w
-        if waypoint not in self.cartesian_waypoint:
-            print("waypoint", waypoint)
-            self.cartesian_waypoint.append(waypoint)
-
-        if self.robot_state == State.NOTSET:
-            self.cartesian = State.GO
-
-    def set_start_callback(self, request):
-        """
-        Get waypoint(s) for cartesian path.
-
-        Args: waypoints (Pose): Waypoints for desired cartesian path.
-
-        Returns: None
-        """
-        waypoint = request
-        self.get_logger().info("Cartesian waypoints Get!")
-        self.ik_pose.position.x = waypoint.position.x
-        self.ik_pose.position.y = waypoint.position.y
-        self.ik_pose.position.z = waypoint.position.z
-        self.ik_pose.orientation.x = waypoint.orientation.x
-        self.ik_pose.orientation.y = waypoint.orientation.y
-        self.ik_pose.orientation.z = waypoint.orientation.z
-        self.ik_pose.orientation.w = waypoint.orientation.w
-        
-        if waypoint not in self.cartesian_waypoint:
-            hit_waypoint = waypoint
-            hit_waypoint.position.z = waypoint.position.z + self.balloon_z/2
-            self.cartesian_waypoint.append(waypoint)
-
-        if self.robot_state == State.NOTSET:
-            self.robot_state = State.GO
 
     def set_start_callback(self, request):
         """
