@@ -1,5 +1,11 @@
 # Motion Planning Quickstart
 
+## One and done guide to using simple_move
+1. After connecting with franka, run `In station: ros2 launch franka_moveit_config moveit.launch.py use_rviz:=false robot_ip:=panda0.robot` in station
+2. Use the command `ros2 launch franka_moveit_config rviz.launch.py robot_ip:=panda0.robot` to launch the node with rviz
+3. Use the command `ros2 run motion_planning simple_move` to launch simple_move
+4. Type `ros2 service call /`
+
 ## Using balloon_move to move robot_arm
 1. Use the command `ros2 launch franka_moveit_config moveit.launch.py robot_ip:=dont-care use_fake_hardware:=true`.
 2. Use the command `ros2 run motion_planning balloon_move` to launch the move node.
