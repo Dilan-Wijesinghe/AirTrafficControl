@@ -1,22 +1,15 @@
 """
-This node will allow the user to input final end effector position and orientation.
-The user can then plan the trajectory. He or she can choose to inspect the scene after trajectory
-planning, and then execute the trajectory. Additionally, user can dynamically add box object to the
-scene at user-defined position.
+Predict the location of the balloon.
+
+Also command the end-effector to go to the balloon position and tap it up.
+
 PUBLISHER:
-    + /planning_scene (PlanningScene) - Publish planning scene
-SUBSCRIBER:
-    + /joint_states (JointState) - Subscribe to the joint states of the robot
-SERVICES:
-    + /set_box_position (motion_planning_interfaces/srv/GetPose) - Set box position in the
-                                                                   planning scene
-    + /set_pos (motion_planning_interfaces/srv/GetPose) - Set the end effector position
-    + /set_orient (motion_planning_interfaces/srv/GetPose) - Set the orientation
-    + /set_pose (motion_planning_interfaces/srv/GetPose) - Set the end effector position and
-                                                           orientation
-    + /wait_before_execute (std_srvs/srv/SetBool) - Wait to execute after planning
-    + /set_start (motion_planning_interfaces/srv/GetPose) - Set up the start point of the end
-                                                            effector
+    + /cartesian_waypoint (geometry_msgs/msg/PoseArray) - Publish cartesian waypoints
+
+SUBSCRIBERS:
+    + /balloon_coords (geometry_msgs/msg/Point) - Subscribe to the balloon coordinates
+    + /curr_ee_pos (geometry_msgs/msg/Point) - Subscribe to the end effector coordinates
+    + /cart_cycle_complete (std_msgs/msg/Empty) - Subscribe to the state of simple_move node
 """
 
 import rclpy
@@ -24,31 +17,11 @@ import numpy as np
 from geometry_msgs.msg import Point, Pose, PoseArray
 from enum import Enum, auto
 from rclpy.node import Node
-import cv2 as cv
 from std_msgs.msg import Empty
 
 
-class KF:
-    def __init__(self):
-        '''Initialize kalman filter variable'''
-        self.kf = cv.KalmanFilter(2, 2, 0)
-        self.kf.measurementMatrix = np.array([[1, 0],
-                                              [0, 1]], np.float32)
-        self.kf.transitionMatrix = np.eye(2, dtype=np.float32)
-
-    def kf_predict(self, coordX, coordY):
-        ''' This function estimates the position of the object'''
-        measured = np.array([[np.float32(coordX)], [np.float32(coordY)]])
-        self.kf.correct(measured)
-        predicted = self.kf.predict()
-        x, y = predicted[0], predicted[1]
-        return x, y
-
-
 class State(Enum):
-    """
-    Current state of the robot.
-    """
+    """Current state of the robot."""
 
     NOTSET = auto()
     GO = auto()
@@ -58,9 +31,10 @@ class State(Enum):
 
 
 class hit(Node):
+    """This node predicts the balloon trajectory. It will publish a predicted hit pose."""
 
     def __init__(self):
-        '''Initialize variables for hit node.'''
+        """Initialize variables for hit node."""
         super().__init__('hit')
 
         self.timer_period = 0.01
@@ -84,19 +58,18 @@ class hit(Node):
         self.move_to = Pose()
         self.last_time = 0.
         self.curr_time = 0.
-        self.kf = KF()
         self.curr_pos = Point()
         self.offset = 0.1
         self.first_point = True
         self.state_cb_called = False
 
-        # transform from cam to robot base frame
+        # Transform from cam to robot base frame
         self.Trc = np.array([[1, 0, 0, 1.11],
                              [0, 0, 1, -1.7],
                              [0, -1, 0, 0.735],
                              [0, 0, 0, 1]])
 
-        # Z Threshold for Letting it Know when to record
+        # Z threshold for letting it know when to record
         self.z_thresh = 1.225
         self.is_falling = False
         self.is_rising = False
@@ -106,7 +79,8 @@ class hit(Node):
         """
         Determine the state of simple_move, by subscribing to /cart_cycle_complete.
 
-        Args: msg (Empty): Tells hit that simple_move just finished hitting the balloon once.
+        Args: msg (std_msgs/msg/Empty): Tells hit that simple_move just finished hitting the
+                                        balloon once.
 
         Returns: None
         """
@@ -123,7 +97,7 @@ class hit(Node):
 
     def balloon_callback(self, msg):
         """
-        Subscribes to /balloon_coords to get the coordinates of the ballon centroid.
+        Subscribe to /balloon_coords to get the coordinates of the ballon centroid.
 
         Args: msg (geometry_msgs/msg/Point): Centroid of balloon
 
@@ -141,25 +115,28 @@ class hit(Node):
     def timer_callback(self):
         """
         Determine the state of the robot and balloons.
-        """
 
+        Args: None
+
+        Returns: None
+        """
         # curve fit: To avoid difficulty with 3D curve parametrization
         #            and to predict the approximate location of the balloon
         #            try to predict x y position by fitting a line in
         #            x-y plane, then fit a parabola in y-z plane to figure
         #            out the z coordinate.
 
-        # replace the following coordinates with actual tracking data
-        # balloon pos in cam frame
+        # Replace the following coordinates with actual tracking data
+        # Balloon pos in cam frame
         v_cam = np.array([self.balloon_pos.x, self.balloon_pos.y, self.balloon_pos.z, 1])
 
-        # balloon pos in robot base frame
+        # Balloon pos in robot base frame
         v_robot = self.Trc @ v_cam.reshape((4, 1))
 
         # Check if the z is within the threshold range
         self.check_rising(v_robot[2])
         self.check_falling(latest_z=v_robot[2])
-        gathered_pts = 2 # number of points to recieve from camera
+        gathered_pts = 2  # Number of points to recieve from camera
         if self.receive_state == State.PUB \
                 and len(self.balloon_pos_x) \
                 < gathered_pts and self.is_falling:
@@ -179,9 +156,9 @@ class hit(Node):
                 self.balloon_pos_z.append(b_pos[2][0])
 
         elif len(self.balloon_pos_x) >= gathered_pts and self.receive_state == State.PUB:
-            # determining euler step prediction for velocity
+            # Determining euler step prediction for velocity
             self.state = State.GO
-            # calculate the initial x and y velocity
+            # Calculate the initial x and y velocity
             velx = (self.balloon_pos_x[1] - self.balloon_pos_x[0])/0.01
             vely = (self.balloon_pos_y[1] - self.balloon_pos_y[0])/0.01
 
@@ -198,7 +175,7 @@ class hit(Node):
                 predicted_x.append(init_x)
                 predicted_y.append(init_y)
 
-            # choose the closest point
+            # Choose the closest point
             pred_x = np.array(predicted_x)
             pred_y = np.array(predicted_y)
             distances = np.sqrt(np.power(pred_x - self.curr_pos.x, 2)
@@ -220,7 +197,7 @@ class hit(Node):
             print("Move To", self.move_to.position.x, self.move_to.position.y,
                   self.move_to.position.z)
 
-            # publish this to Inverse Kinematics and move the arm
+            # Publish this to Inverse Kinematics and move the arm
             if self.cycle_complete == State.NOTSET:
 
                 # + self.offset
@@ -242,7 +219,13 @@ class hit(Node):
                 self.state_cb_called = False
 
     def check_falling(self, latest_z):
-        """Helper function to dtermine if balloon is falling."""
+        """
+        Determine if balloon is falling.
+
+        Args: latest_z: The current height of the balloon
+
+        Returns: None
+        """
         if latest_z == self.Trc[2, -1]:
             self.is_falling = False
         else:
@@ -252,15 +235,21 @@ class hit(Node):
                 self.is_falling = False
 
     def check_rising(self, latest_z):
-        """Helper function to determine if balloon is rising."""
+        """
+        Determine if balloon is rising.
+
+        Args: latest_z: The current height of the balloon
+
+        Returns: None
+        """
         if self.state_cb_called is True:
             self.state_cb_called = False if latest_z > self.z_thresh else True
 
     def curr_pos_callback(self, msg):
         """
-        Subscribes to /curr_ee_pos to get the coordinates of the end-effector.
+        Subscribe to /curr_ee_pos to get the coordinates of the end-effector.
 
-        Args: msg (geometry_msgs/msg/Point): Coordinates of ee
+        Args: msg (geometry_msgs/msg/Point): Coordinates of end-effector
 
         Returns: None
         """
