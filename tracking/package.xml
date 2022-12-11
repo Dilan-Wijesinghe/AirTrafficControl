@@ -3,7 +3,7 @@
 <package format="3">
   <name>tracking</name>
   <version>0.0.0</version>
-  <description>OpenCV package for tracking Balloons</description>
+  <description>OpenCV package for tracking balloons</description>
   <maintainer email="dilanwijesinghe2023@u.northwestern.du">Dilan Wijesinghe</maintainer>
   <license>MIT</license>
 

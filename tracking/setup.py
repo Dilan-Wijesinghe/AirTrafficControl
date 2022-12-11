@@ -16,8 +16,8 @@ setup(
     zip_safe=True,
     maintainer='dilly',
     maintainer_email='dilan.wijesinghe0@gmail.com',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    description='OpenCV package for tracking balloons',
+    license='MIT',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
