@@ -151,7 +151,7 @@ class Mover(Node):
         self.max_acc_scale = 0.1
         self.hard_code_vel_scale = 1.0
         self.balloon_z = 0.12 # m from paddle to balloon
-        self.joint_tolerance = self.max_vel_scale / 10.
+        self.joint_tolerance = self.max_vel_scale/10.
         self.orient_constraint = Quaternion(x=1., y=0., z=0., w=0.)
 
         # m from paddle to balloon
@@ -185,6 +185,7 @@ class Mover(Node):
 
     def set_start_callback(self, request):
         """
+<<<<<<< HEAD
         Get waypoint(s) for cartesian path.
 
         Args: waypoints (Pose): Waypoints for desired cartesian path.
@@ -207,6 +208,30 @@ class Mover(Node):
 
         if self.robot_state == State.NOTSET:
             self.cartesian = State.GO
+
+    def set_start_callback(self, request):
+        """
+=======
+>>>>>>> 15fdb47 (old simple_move needs to be overwritten)
+        Get the start position and change state.
+
+        Args: request (GetPoseRequest): Position and orientation of the end effector
+
+        Returns: None
+        """
+        self.get_logger().info("Set starting pose!")
+        if self.set_start_state == State.NOTSET:
+            self.start_config.position.x = request.pose.position.x
+            self.start_config.position.y = request.pose.position.y
+            self.start_config.position.z = request.pose.position.z
+            self.start_config.orientation.x = request.pose.orientation.x
+            self.start_config.orientation.y = request.pose.orientation.y
+            self.start_config.orientation.z = request.pose.orientation.z
+            self.start_config.orientation.w = request.pose.orientation.w
+
+            self.set_start_state = State.GO
+            self.user_start_config = True
+            self.execute_immediately = False
 
     def set_box(self, request, response):
         """
@@ -434,10 +459,47 @@ class Mover(Node):
             except TransformException as ex:
                 self.get_logger().info(f'Could not transform : {ex}')
 
-        # Obtain FINAL joint state for target Pose
+        ################# Obtain FINAL joint state for target Pose #################
+        # The following is IK for FINAL joint state.
         if self.robot_state == State.GO:
             # filling in IK request msg
             self.ik_states.group_name = "panda_arm"
+
+            self.ik_states.robot_state = RobotState()
+            js = JointState()
+            js_header = Header()
+            js_header.stamp = self.get_clock().now().to_msg()
+            js_header.frame_id = 'panda_link0'
+            js.header = js_header
+            js.name = [
+                'panda_joint1',
+                'panda_joint2',
+                'panda_joint3',
+                'panda_joint4',
+                'panda_joint5',
+                'panda_joint6',
+                'panda_joint7',
+                'panda_finger_joint1',
+                'panda_finger_joint2'
+            ]
+            js.position = self.curr_joint_pos
+            self.ik_states.robot_state.joint_state = js
+            
+            cons = Constraints()
+            cons.name = 'stay_level'
+            orient_cons = OrientationConstraint()
+            orient_cons.header.stamp = self.get_clock().now().to_msg()
+            orient_cons.header.frame_id = 'panda_hand'
+            orient_cons.orientation = self.orient_constraint
+            orient_cons.link_name = 'panda_hand_tcp'
+            orient_cons.absolute_x_axis_tolerance = self.joint_tolerance
+            orient_cons.absolute_y_axis_tolerance = self.joint_tolerance
+            orient_cons.absolute_z_axis_tolerance = self.joint_tolerance
+            orient_cons.weight = 1.0
+            cons.orientation_constraints.append(orient_cons)
+            self.ik_states.constraints = cons
+
+            # self.ik_states.avoid_collisions = True
 
             # PoseStamped msg
             self.ik_robot_states.pose = self.ik_pose
@@ -472,8 +534,7 @@ class Mover(Node):
                     self.robot_state = State.NOTSET
                 else:
                     self.final_js = ik_future.result().solution.joint_state.position
-                    self.robot_state = State.NOTSET
-                    self.get_logger().info("Sending Goal")
+                    self.robot_state = State.OBTAINED
                     self.send_goal()
 
         # Obtain FINAL joint state for Cartesian Waypoint(s)
@@ -789,8 +850,9 @@ class Mover(Node):
         Returns: None
         """
         self.get_logger().info("Trajectory execution done")
-        self.robot_state = State.NOTSET     # sub to joint_states, get the curr pos, and update it
-        self.get_logger().info(f"Current Z is {self.curr_pos.z}")
+        if self.robot_state == State.GO:
+            self.robot_state = State.NOTSET
+            self.cartesian = State.GO
 
     def wait_callback(self, request, response):
         """
