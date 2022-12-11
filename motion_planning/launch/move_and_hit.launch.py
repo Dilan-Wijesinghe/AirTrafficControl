@@ -22,4 +22,3 @@ def generate_launch_description():
             name='hit'
         )
     ])
-    
