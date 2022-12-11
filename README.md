@@ -6,7 +6,7 @@ This repository contains software developed for ME 495 Embedded Systems in Robot
 ## Overview
 The objective of this project is to play the game 'Don't let the balloon drop to the ground' with a Franka Emika Panda arm. It does this by tracking a falling balloon in real time, predicts where the balloon will land, moves to the location before the balloon lands, and pushes it up. This process is done semi-autonomously, with some human-robot interaction, and utilizes open-source computer vision and motion planning software packages.
 
-![catch1]()
+![catch1](https://github.com/Dilan-Wijesinghe/AirTrafficControl/blob/main/media/IMG_7415.gif)
 
 Our project is plit into three packages:
 ### Tracking 
