@@ -12,6 +12,9 @@ Our project is plit into three packages:
 ### Tracking 
 This package contains one node
 * `im_sub` - This node does the entire Computer Vision aspect of this project using a RealSense camera. It uses background subtraction and color detection to track a moving red balloon. With this information, it publishes to a topic called `balloon_coords`, which represent the real coordinates of the balloon in the camera frame.
+
+![tracking1](https://github.com/Dilan-Wijesinghe/AirTrafficControl/blob/main/media/balloon_tracking.gif)
+
 ### Motion Planning Interfaces
 This package contains srv file GetPose, MultiplePose, and Place, which are used in our custom MoveIt package
 ### Motion Planning
